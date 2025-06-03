@@ -280,39 +280,151 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               z-index: 100;
               display: none;
             }
+            /* 향상된 경로 옵션 스타일 */
             .route-options {
               position: absolute;
-              top: 10px;
+              top: 15px;
               left: 50%;
               transform: translateX(-50%);
-              background-color: white;
-              border-radius: 5px;
-              box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-              padding: 8px 12px;
+              background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(248,250,252,0.95) 100%);
+              backdrop-filter: blur(10px);
+              -webkit-backdrop-filter: blur(10px);
+              border-radius: 16px;
+              box-shadow: 0 8px 32px rgba(0,0,0,0.1), 0 2px 8px rgba(0,0,0,0.05);
+              padding: 12px 16px;
               display: flex;
               align-items: center;
               z-index: 100;
+              border: 1px solid rgba(255,255,255,0.2);
+              min-width: 300px;
+              justify-content: center;
             }
+
             .option-label {
-              font-size: 12px;
-              margin-right: 8px;
+              font-size: 13px;
+              font-weight: 600;
+              color: #374151;
+              margin-right: 12px;
+              letter-spacing: -0.2px;
             }
+
             .option-buttons {
               display: flex;
+              background: rgba(243, 244, 246, 0.8);
+              border-radius: 12px;
+              padding: 3px;
+              gap: 2px;
             }
+
             .option-button {
-              border: 1px solid #ddd;
-              background-color: white;
-              padding: 4px 8px;
-              margin: 0 2px;
+              border: none;
+              background: transparent;
+              padding: 8px 14px;
               font-size: 12px;
+              font-weight: 500;
               cursor: pointer;
-              border-radius: 3px;
+              border-radius: 9px;
+              transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+              color: #6B7280;
+              position: relative;
+              overflow: hidden;
+              min-width: 60px;
+              text-align: center;
             }
+
+            .option-button:hover {
+              color: #374151;
+              transform: translateY(-1px);
+            }
+
             .option-button.active {
-              background-color: #4B89DC;
+              background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
               color: white;
-              border-color: #4B89DC;
+              box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3), 0 2px 4px rgba(59, 130, 246, 0.2);
+              transform: translateY(-1px);
+            }
+
+            .option-button.active::before {
+              content: '';
+              position: absolute;
+              top: 0;
+              left: 0;
+              right: 0;
+              bottom: 0;
+              background: linear-gradient(45deg, rgba(255,255,255,0.1) 0%, transparent 50%, rgba(255,255,255,0.1) 100%);
+              pointer-events: none;
+            }
+
+            /* 아이콘 추가 */
+            .option-button::after {
+              content: '';
+              position: absolute;
+              left: 6px;
+              top: 50%;
+              transform: translateY(-50%);
+              width: 6px;
+              height: 6px;
+              border-radius: 50%;
+              background: currentColor;
+              opacity: 0;
+              transition: opacity 0.2s ease;
+            }
+
+            .option-button.active::after {
+              opacity: 1;
+            }
+
+            /* 추천 경로 특별 스타일 */
+            #optRecommend.active {
+              background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+              box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3), 0 2px 4px rgba(16, 185, 129, 0.2);
+            }
+
+            /* 최단시간 경로 스타일 */
+            #optTime.active {
+              background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+              box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3), 0 2px 4px rgba(245, 158, 11, 0.2);
+            }
+
+            /* 최단거리 경로 스타일 */
+            #optDistance.active {
+              background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
+              box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3), 0 2px 4px rgba(239, 68, 68, 0.2);
+            }
+
+            /* 애니메이션 효과 */
+            @keyframes slideIn {
+              from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(-10px);
+              }
+              to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+              }
+            }
+
+            .route-options {
+              animation: slideIn 0.3s ease-out;
+            }
+
+            /* 반응형 디자인 */
+            @media (max-width: 480px) {
+              .route-options {
+                min-width: 280px;
+                padding: 10px 14px;
+              }
+              
+              .option-label {
+                font-size: 12px;
+                margin-right: 10px;
+              }
+              
+              .option-button {
+                padding: 7px 12px;
+                font-size: 11px;
+                min-width: 55px;
+              }
             }
             .loading-indicator {
               position: absolute;

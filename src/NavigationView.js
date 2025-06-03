@@ -102,47 +102,77 @@ const NavigationView = () => {
   }, [isNavigating, webViewLoaded]);
   
   // 수거 완료 처리 함수
-  const handleCollectionComplete = () => {
-    if (currentWaypointIndex < waypoints.length - 1) {
-      const nextIndex = currentWaypointIndex + 1;
-      setCurrentWaypointIndex(nextIndex);
-      
+  const handleCollectionComplete = async () => {
+    try {
+      // API 호출하여 pickupProgress를 true로 업데이트
+      const response = await fetch('https://refresh-f5-server.o-r.kr/api/pickup/update-pickup', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          pickupId: pickupId,
+          pickupProgress: true
+        })
+      });
+  
+      if (!response.ok) {
+        throw new Error('수거 완료 업데이트 실패');
+      }
+  
+      const result = await response.json();
+      console.log('수거 완료 업데이트 성공:', result);
+  
+      // 기존 로직 실행
+      if (currentWaypointIndex < waypoints.length - 1) {
+        const nextIndex = currentWaypointIndex + 1;
+        setCurrentWaypointIndex(nextIndex);
+               
+        Alert.alert(
+          '수거 완료', 
+          `${currentWaypointIndex + 1}번째 경유지 수거가 완료되었습니다.\n다음 경유지로 안내합니다.`,
+          [{ text: '확인' }]
+        );
+               
+        if (webViewRef.current && webViewLoaded) {
+          try {
+            webViewRef.current.postMessage(JSON.stringify({
+              type: 'UPDATE_ACTIVE_WAYPOINT',
+              waypointIndex: nextIndex
+            }));
+          } catch (error) {
+            console.log('경유지 업데이트 메시지 전송 오류:', error);
+          }
+        }
+               
+        setShowCompleteButton(false);
+      } else {
+        Alert.alert(
+          '모든 수거 완료', 
+          '모든 경유지 수거가 완료되었습니다.\n목적지로 안내합니다.',
+          [{ text: '확인' }]
+        );
+               
+        if (webViewRef.current && webViewLoaded) {
+          try {
+            webViewRef.current.postMessage(JSON.stringify({
+              type: 'NAVIGATE_TO_DESTINATION'
+            }));
+          } catch (error) {
+            console.log('목적지 안내 메시지 전송 오류:', error);
+          }
+        }
+               
+        setShowCompleteButton(false);
+      }
+  
+    } catch (error) {
+      console.error('수거 완료 처리 오류:', error);
       Alert.alert(
-        '수거 완료', 
-        `${currentWaypointIndex + 1}번째 경유지 수거가 완료되었습니다.\n다음 경유지로 안내합니다.`,
+        '오류',
+        '수거 완료 처리 중 오류가 발생했습니다.',
         [{ text: '확인' }]
       );
-      
-      if (webViewRef.current && webViewLoaded) {
-        try {
-          webViewRef.current.postMessage(JSON.stringify({
-            type: 'UPDATE_ACTIVE_WAYPOINT',
-            waypointIndex: nextIndex
-          }));
-        } catch (error) {
-          console.log('경유지 업데이트 메시지 전송 오류:', error);
-        }
-      }
-      
-      setShowCompleteButton(false);
-    } else {
-      Alert.alert(
-        '모든 수거 완료', 
-        '모든 경유지 수거가 완료되었습니다.\n목적지로 안내합니다.',
-        [{ text: '확인' }]
-      );
-      
-      if (webViewRef.current && webViewLoaded) {
-        try {
-          webViewRef.current.postMessage(JSON.stringify({
-            type: 'NAVIGATE_TO_DESTINATION'
-          }));
-        } catch (error) {
-          console.log('목적지 안내 메시지 전송 오류:', error);
-        }
-      }
-      
-      setShowCompleteButton(false);
     }
   };
 
@@ -1386,6 +1416,16 @@ const NavigationView = () => {
     }
   };
 
+  // 속도 색상 결정 함수
+  const getSpeedColor = () => {
+    if (!speedLimit) return '#fff';
+    
+    const speedRatio = currentSpeed / speedLimit;
+    if (speedRatio > 1.1) return '#ff4757'; // 제한속도 초과 (빨간색)
+    if (speedRatio > 0.9) return '#ffa502'; // 제한속도 근접 (주황색)
+    return '#fff'; // 정상 (흰색)
+  };
+
   // 로딩 컴포넌트
   const LoadingIndicator = () => (
     <View style={styles.loadingContainer}>
@@ -1426,9 +1466,23 @@ const NavigationView = () => {
             </Text>
           </View>
         </View>
-        <TouchableOpacity style={styles.voiceButton}>
-          <Ionicons name="mic" size={24} color="#fff" />
-        </TouchableOpacity>
+        
+        {/* 속도 표시 영역 */}
+        <View style={styles.speedContainer}>
+          <View style={[styles.speedIndicator, { borderColor: getSpeedColor() }]}>
+            <Text style={[styles.currentSpeed, { color: getSpeedColor() }]}>
+              {currentSpeed}
+            </Text>
+            <Text style={[styles.speedUnit, { color: getSpeedColor() }]}>
+              km/h
+            </Text>
+          </View>
+          {speedLimit && (
+            <View style={styles.speedLimitContainer}>
+              <Text style={styles.speedLimitText}>{speedLimit}</Text>
+            </View>
+          )}
+        </View>
       </View>
 
       {/* 지도 영역 */}
@@ -1519,6 +1573,14 @@ const NavigationView = () => {
           
           style={styles.webView}
         />
+        
+        {/* 도로명 표시 */}
+        {currentRoad && (
+          <View style={styles.roadNameContainer}>
+            <Ionicons name="location-outline" size={16} color="#666" />
+            <Text style={styles.roadNameText}>{currentRoad}</Text>
+          </View>
+        )}
         
         {/* 수거 완료 버튼 */}
         {waypoints.length > 0 && currentWaypointIndex < waypoints.length && showCompleteButton && (
@@ -1632,13 +1694,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: 'rgba(255,255,255,0.9)',
   },
-  voiceButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+  // 속도 표시 관련 스타일 추가
+  speedContainer: {
+    alignItems: 'center',
+    marginLeft: 12,
+  },
+  speedIndicator: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 3,
+    backgroundColor: 'rgba(255,255,255,0.1)',
     justifyContent: 'center',
     alignItems: 'center',
+    marginBottom: 4,
+  },
+  currentSpeed: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    lineHeight: 22,
+  },
+  speedUnit: {
+    fontSize: 10,
+    fontWeight: '600',
+    lineHeight: 12,
+  },
+  speedLimitContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#ff4757',
+  },
+  speedLimitText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#ff4757',
   },
   mapContainer: {
     flex: 1,
@@ -1648,6 +1742,31 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
+  },
+  // 도로명 표시 관련 스타일 추가
+  roadNameContainer: {
+    position: 'absolute',
+    top: 20,
+    left: 20,
+    right: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  roadNameText: {
+    fontSize: 14,
+    color: '#333',
+    fontWeight: '600',
+    marginLeft: 6,
+    flex: 1,
   },
   loadingContainer: {
     flex: 1,
