@@ -15,6 +15,7 @@ import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import CustomModal from './CustomModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -43,6 +44,28 @@ const NavigationView = () => {
   const [webViewLoaded, setWebViewLoaded] = useState(false);
   const [webViewError, setWebViewError] = useState(false);
   const webViewRef = useRef(null);
+  const [modalConfig, setModalConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    buttons: [],
+    type: 'default'
+  });
+
+  // 헬퍼 함수들 추가
+  const showModal = (config) => {
+    setModalConfig({
+      visible: true,
+      ...config
+    });
+  };
+
+  const hideModal = () => {
+    setModalConfig(prev => ({
+      ...prev,
+      visible: false
+    }));
+  };
 
   // 위치 추적 시작
   useEffect(() => {
@@ -127,12 +150,15 @@ const NavigationView = () => {
       if (currentWaypointIndex < waypoints.length - 1) {
         const nextIndex = currentWaypointIndex + 1;
         setCurrentWaypointIndex(nextIndex);
-               
-        Alert.alert(
-          '수거 완료', 
-          `${currentWaypointIndex + 1}번째 경유지 수거가 완료되었습니다.\n다음 경유지로 안내합니다.`,
-          [{ text: '확인' }]
-        );
+
+        showModal({
+          title: '수거 완료',
+          message: `${currentWaypointIndex + 1}번째 경유지 수거가 완료되었습니다.\n다음 경유지로 안내합니다.`,
+          type: 'success',
+          buttons: [
+            { text: '확인' }
+          ]
+        });
                
         if (webViewRef.current && webViewLoaded) {
           try {
@@ -147,11 +173,17 @@ const NavigationView = () => {
                
         setShowCompleteButton(false);
       } else {
-        Alert.alert(
-          '모든 수거 완료', 
-          '모든 경유지 수거가 완료되었습니다.\n목적지로 안내합니다.',
-          [{ text: '확인' }]
-        );
+        showModal({
+          title: '모든 수거 완료',
+          message: '모든 경유지 수거가 완료되었습니다.\n목적지로 안내합니다.',
+          type: 'success',
+          buttons: [
+            {
+              text: '확인',
+              onPress: () => navigation.goBack()
+            }
+          ]
+        });
                
         if (webViewRef.current && webViewLoaded) {
           try {
@@ -168,11 +200,26 @@ const NavigationView = () => {
   
     } catch (error) {
       console.error('수거 완료 처리 오류:', error);
-      Alert.alert(
-        '오류',
-        '수거 완료 처리 중 오류가 발생했습니다.',
-        [{ text: '확인' }]
-      );
+      showModal({
+        title: '오류',
+        message: '수거 완료 처리 중 오류가 발생했습니다.\n계속 진행하시겠습니까?',
+        type: 'error',
+        buttons: [
+          { text: '취소', style: 'cancel' },
+          {
+            text: '계속',
+            onPress: () => {
+              if (currentWaypointIndex < waypoints.length - 1) {
+                const nextIndex = currentWaypointIndex + 1;
+                setCurrentWaypointIndex(nextIndex);
+                setShowCompleteButton(false);
+              } else {
+                navigation.goBack();
+              }
+            }
+          }
+        ]
+      });
     }
   };
 
@@ -1649,6 +1696,16 @@ const NavigationView = () => {
           <Ionicons name="menu" size={24} color="#666" />
         </TouchableOpacity>
       </View>
+
+      {/* 커스텀 모달 추가 */}
+      <CustomModal
+        visible={modalConfig.visible}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        buttons={modalConfig.buttons}
+        type={modalConfig.type}
+        onClose={hideModal}
+      />
     </SafeAreaView>
   );
 };

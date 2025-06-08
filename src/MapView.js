@@ -14,6 +14,7 @@ import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import * as Linking from 'expo-linking';
 import { useNavigation } from '@react-navigation/native';
+import CustomModal from './CustomModal';
 
 const { width, height } = Dimensions.get('window');
 
@@ -34,6 +35,29 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
   const [currentWaypointIndex, setCurrentWaypointIndex] = useState(0);
   // 앱 포커스 감지를 위한 상태 추가
   const [appState, setAppState] = useState(AppState.currentState);
+  const [modalConfig, setModalConfig] = useState({
+    visible: false,
+    title: '',
+    message: '',
+    buttons: [],
+    type: 'default'
+  });
+
+  // 모달 표시 헬퍼 함수
+  const showModal = (config) => {
+    setModalConfig({
+      visible: true,
+      ...config
+    });
+  };
+
+  // 모달 닫기 함수
+  const hideModal = () => {
+    setModalConfig(prev => ({
+      ...prev,
+      visible: false
+    }));
+  };
 
   // 위치 권한 요청 및 현재 위치 가져오기
   useEffect(() => {
@@ -136,37 +160,30 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
       currentIndex: currentWaypointIndex,
       totalPickups: selectedPickups.length
     });
-    
+
     if (currentWaypointIndex >= selectedPickups.length) {
       console.log('모든 수거지 완료됨, 다이얼로그 표시하지 않음');
       return;
     }
-    
+
     const currentDestination = selectedPickups[currentWaypointIndex];
-    console.log('수거 완료 확인 대상:', currentDestination);
-    
-    Alert.alert(
-      '수거 완료 확인',
-      `${currentDestination?.name || `경유지 ${currentWaypointIndex + 1}`}에서 수거가 완료되었나요?`,
-      [
+
+    showModal({
+      title: '수거 완료 확인',
+      message: `${currentDestination?.name || `경유지 ${currentWaypointIndex + 1}`}에서 수거가 완료되었나요?`,
+      type: 'default',
+      buttons: [
         {
           text: '아니오',
           style: 'cancel',
-          onPress: () => {
-            console.log('수거 미완료, 같은 경유지로 다시 안내');
-            // 같은 경유지로 다시 안내 (인덱스 변경 없음)
-            navigateToCurrentWaypoint();
-          }
+          onPress: () => navigateToCurrentWaypoint()
         },
         {
           text: '완료',
-          onPress: () => {
-            console.log('수거 완료 처리 시작');
-            handleCollectionComplete();
-          }
+          onPress: () => handleCollectionComplete()
         }
       ]
-    );
+    });
   };
 
   // 수거 완료 처리 함수
@@ -185,50 +202,41 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
       const distance = calculateDistanceToDestination(nextDestination);
       const estimatedTime = Math.round(distance * 2);
 
-      Alert.alert(
-        '수거 완료',
-        `${currentWaypointIndex + 1}번째 수거지 수거가 완료되었습니다.\n\n다음 수거지 정보:\n${nextDestination.name || `수거지 ${nextIndex + 1}`}\n${nextDestination.address || '주소 정보 없음'}\n거리: ${distance.toFixed(1)}km\n예상 소요시간: ${estimatedTime}분\n\n다음 목적지를 안내받으시겠습니까?`,
-        [
-          {
-            text: '나중에',
-            style: 'cancel',
-            onPress: () => {
-              console.log('나중에 선택, 인덱스만 증가:', nextIndex);
-              setCurrentWaypointIndex(nextIndex);
-            }
-          },
+      showModal({
+        title: '수거 완료',
+        message: `${currentWaypointIndex + 1}번째 수거지 수거가 완료되었습니다.\n\n다음 수거지 정보:\n${nextDestination.name || `수거지 ${nextIndex + 1}`}\n${nextDestination.address || '주소 정보 없음'}\n거리: ${distance.toFixed(1)}km\n예상 소요시간: ${estimatedTime}분\n\n다음 목적지를 안내받으시겠습니까?`,
+        type: 'success',
+        buttons: [
+          { text: '나중에', style: 'cancel', onPress: () => setCurrentWaypointIndex(nextIndex) },
           {
             text: '안내 시작',
             onPress: () => {
-              console.log('안내 시작 선택, 인덱스 증가 후 안내:', nextIndex);
-              // 먼저 인덱스를 증가시키고
               setCurrentWaypointIndex(nextIndex);
-              // 상태 업데이트 완료를 보장하기 위해 setTimeout 사용
               setTimeout(() => {
-                // 다음 경유지로 직접 내비게이션 시작
                 startKakaoMapToDestination(nextDestination);
               }, 100);
             }
           }
         ]
-      );
+      });
     } else {
       // 모든 경유지 완료
-      Alert.alert(
-        '모든 수거 완료',
-        '모든 경유지의 수거가 완료되었습니다!',
-        [{
-          text: '확인',
-          onPress: () => {
-            console.log('모든 수거 완료, 초기화');
-            setCurrentWaypointIndex(0);
-            // clearAllSelections 함수 안전 호출
-            if (typeof clearAllSelections === 'function') {
-              clearAllSelections();
+      showModal({
+        title: '모든 수거 완료',
+        message: '모든 경유지의 수거가 완료되었습니다!',
+        type: 'success',
+        buttons: [
+          {
+            text: '확인',
+            onPress: () => {
+              setCurrentWaypointIndex(0);
+              if (typeof clearAllSelections === 'function') {
+                clearAllSelections();
+              }
             }
           }
-        }]
-      );
+        ]
+      });
     }
   };
 
@@ -267,11 +275,32 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
 
   // 현재 경유지로 내비게이션 시작
   const navigateToCurrentWaypoint = () => {
+    console.log('navigateToCurrentWaypoint 호출됨');
     console.log('현재 경유지 인덱스:', currentWaypointIndex);
-    console.log('전체 선택된 수거지:', selectedPickups.length);
+    console.log('전체 선택된 수거지:', selectedPickups?.length || 0);
+    console.log('selectedPickups:', selectedPickups);
+
+    if (!selectedPickups || selectedPickups.length === 0) {
+      showModal({
+        title: '오류',
+        message: '선택된 수거지가 없습니다.',
+        type: 'error',
+        buttons: [
+          { text: '확인', style: 'cancel' }
+        ]
+      });
+      return;
+    }
 
     if (currentWaypointIndex >= selectedPickups.length) {
-      Alert.alert('알림', '모든 경유지를 완료했습니다.');
+      showModal({
+        title: '알림',
+        message: '모든 경유지를 완료했습니다.',
+        type: 'success',
+        buttons: [
+          { text: '확인', style: 'cancel' }
+        ]
+      });
       return;
     }
 
@@ -279,7 +308,14 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
     console.log('현재 목적지:', currentDestination);
 
     if (!currentDestination) {
-      Alert.alert('오류', '유효한 경유지 정보를 찾을 수 없습니다.');
+      showModal({
+        title: '오류',
+        message: '유효한 경유지 정보를 찾을 수 없습니다.',
+        type: 'error',
+        buttons: [
+          { text: '확인', style: 'cancel' }
+        ]
+      });
       return;
     }
 
@@ -287,20 +323,24 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
     const distance = calculateDistanceToDestination(currentDestination);
     const estimatedTime = Math.round(distance * 2);
 
-    Alert.alert(
-      '내비게이션 선택',
-      `${currentWaypointIndex + 1}번째 수거지로 안내합니다.\n\n수거지 정보:\n${currentDestination.name || `수거지 ${currentWaypointIndex + 1}`}\n${currentDestination.address || '주소 정보 없음'}\n거리: ${distance.toFixed(1)}km\n예상 소요시간: ${estimatedTime}분`,
-      [
+    console.log('계산된 거리:', distance, 'km');
+    console.log('예상 시간:', estimatedTime, '분');
+
+    showModal({
+      title: '내비게이션 선택',
+      message: `${currentWaypointIndex + 1}번째 수거지로 안내합니다.\n\n수거지 정보:\n${currentDestination.name || `수거지 ${currentWaypointIndex + 1}`}\n${currentDestination.address || '주소 정보 없음'}\n거리: ${distance.toFixed(1)}km\n예상 소요시간: ${estimatedTime}분`,
+      type: 'default',
+      buttons: [
+        { text: '취소', style: 'cancel' },
         {
           text: '카카오맵으로 안내',
-          onPress: () => startSingleDestinationNavi('kakaomap')
-        },
-        {
-          text: '취소',
-          style: 'cancel'
+          onPress: () => {
+            console.log('카카오맵으로 안내 버튼 클릭됨');
+            startSingleDestinationNavi('kakaomap');
+          }
         }
       ]
-    );
+    });
   };
 
   // 단일 목적지용 다른 앱 선택
@@ -339,15 +379,35 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
 
   // 단일 목적지 내비게이션 실행
   const startSingleDestinationNavi = async (naviType) => {
-    console.log('단일 목적지 내비게이션 시작:', {
+    console.log('startSingleDestinationNavi 호출됨:', {
       naviType,
       currentIndex: currentWaypointIndex,
-      totalPickups: selectedPickups.length
+      totalPickups: selectedPickups?.length || 0
     });
+
+    if (!selectedPickups || selectedPickups.length === 0) {
+      console.log('오류: 선택된 수거지가 없음');
+      showModal({
+        title: '오류',
+        message: '선택된 수거지가 없습니다.',
+        type: 'error',
+        buttons: [
+          { text: '확인', style: 'cancel' }
+        ]
+      });
+      return;
+    }
 
     if (currentWaypointIndex >= selectedPickups.length) {
       console.log('오류: 유효한 경유지가 없음');
-      Alert.alert('알림', '유효한 경유지가 없습니다.');
+      showModal({
+        title: '알림',
+        message: '유효한 경유지가 없습니다.',
+        type: 'warning',
+        buttons: [
+          { text: '확인', style: 'cancel' }
+        ]
+      });
       return;
     }
 
@@ -359,23 +419,43 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
 
     if (!destination || !destination.latitude || !destination.longitude) {
       console.log('오류: 목적지 좌표 정보가 올바르지 않음');
-      Alert.alert('오류', '목적지 좌표 정보가 올바르지 않습니다.');
+      showModal({
+        title: '오류',
+        message: '목적지 좌표 정보가 올바르지 않습니다.',
+        type: 'error',
+        buttons: [
+          { text: '확인', style: 'cancel' }
+        ]
+      });
       return;
     }
 
     const startLat = currentLocation.latitude;
     const startLng = currentLocation.longitude;
 
+    console.log('내비게이션 시작 좌표:', {
+      start: { lat: startLat, lng: startLng },
+      destination: { lat: destination.latitude, lng: destination.longitude }
+    });
+
     try {
       // 카카오맵만 지원
       if (naviType === 'kakaomap') {
+        console.log('카카오맵 실행 시도');
         await executeSingleKakaoMap(destination, startLat, startLng);
       } else {
-        throw new Error('지원하지 않는 내비게이션 타입입니다.');
+        throw new Error('지원하지 않는 내비게이션 타입입니다: ' + naviType);
       }
     } catch (error) {
       console.error('단일 목적지 내비게이션 오류:', error);
-      Alert.alert('오류', '내비게이션을 실행할 수 없습니다: ' + error.message);
+      showModal({
+        title: '오류',
+        message: '내비게이션을 실행할 수 없습니다: ' + error.message,
+        type: 'error',
+        buttons: [
+          { text: '확인', style: 'cancel' }
+        ]
+      });
     }
   };
 
@@ -410,26 +490,60 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
 
   // 단일 목적지용 카카오맵
   const executeSingleKakaoMap = async (destination, startLat, startLng) => {
-    let kakaoMapUrl = `kakaomap://route?sp=${startLat},${startLng}`;
-    kakaoMapUrl += `&ep=${destination.latitude},${destination.longitude}`;
-    kakaoMapUrl += `&by=CAR&rpoption=RECOMMEND`;
+    console.log('executeSingleKakaoMap 호출됨:', {
+      destination: destination.name,
+      startLat,
+      startLng,
+      destLat: destination.latitude,
+      destLng: destination.longitude
+    });
 
-    const supported = await Linking.canOpenURL(kakaoMapUrl);
-    if (supported) {
-      await Linking.openURL(kakaoMapUrl);
-    } else {
-      const storeUrl = Platform.OS === 'ios'
-        ? 'https://apps.apple.com/kr/app/kakaomap/id304608425'
-        : 'https://play.google.com/store/apps/details?id=net.daum.android.map';
+    try {
+      let kakaoMapUrl = `kakaomap://route?sp=${startLat},${startLng}`;
+      kakaoMapUrl += `&ep=${destination.latitude},${destination.longitude}`;
+      kakaoMapUrl += `&by=CAR&rpoption=RECOMMEND`;
 
-      Alert.alert(
-        '카카오맵 설치 필요',
-        '카카오맵이 설치되어 있지 않습니다. 설치하시겠습니까?',
-        [
-          { text: '취소', style: 'cancel' },
-          { text: '설치', onPress: () => Linking.openURL(storeUrl) }
+      console.log('생성된 카카오맵 URL:', kakaoMapUrl);
+
+      const supported = await Linking.canOpenURL(kakaoMapUrl);
+      console.log('카카오맵 URL 지원 여부:', supported);
+
+      if (supported) {
+        console.log('카카오맵 실행 시도');
+        await Linking.openURL(kakaoMapUrl);
+        console.log('카카오맵 실행 완료');
+      } else {
+        console.log('카카오맵이 설치되지 않음, 스토어로 이동');
+        const storeUrl = Platform.OS === 'ios'
+          ? 'https://apps.apple.com/kr/app/kakaomap/id304608425'
+          : 'https://play.google.com/store/apps/details?id=net.daum.android.map';
+
+        showModal({
+          title: '카카오맵 설치 필요',
+          message: '카카오맵이 설치되어 있지 않습니다. 설치하시겠습니까?',
+          type: 'warning',
+          buttons: [
+            { text: '취소', style: 'cancel' },
+            {
+              text: '설치',
+              onPress: () => {
+                console.log('앱스토어로 이동');
+                Linking.openURL(storeUrl);
+              }
+            }
+          ]
+        });
+      }
+    } catch (error) {
+      console.error('카카오맵 실행 중 오류:', error);
+      showModal({
+        title: '오류',
+        message: '카카오맵을 실행할 수 없습니다: ' + error.message,
+        type: 'error',
+        buttons: [
+          { text: '확인', style: 'cancel' }
         ]
-      );
+      });
     }
   };
 
@@ -982,46 +1096,99 @@ const executeTMap = async () => {
   // 네비게이션 선택 다이얼로그 표시 (공지사항에 따라 수정)
 // 최종 권장 방안
   const startNavigation = () => {
+    console.log('startNavigation 호출됨');
+    console.log('selectedPickups:', selectedPickups);
+    console.log('selectedPickups 길이:', selectedPickups?.length || 0);
+
     if (!selectedPickups || selectedPickups.length === 0) {
-      Alert.alert('알림', '내비게이션을 시작하려면 최소 한 개의 수거지를 선택해주세요.');
+      console.log('선택된 수거지가 없음');
+      showModal({
+        title: '알림',
+        message: '내비게이션을 시작하려면 최소 한 개의 수거지를 선택해주세요.',
+        type: 'warning',
+        buttons: [
+          { text: '확인', style: 'cancel' }
+        ]
+      });
       return;
     }
 
     // 현재 경유지 인덱스 초기화
+    console.log('경유지 인덱스 초기화: 0');
     setCurrentWaypointIndex(0);
 
     // 첫 번째 수거지 정보 가져오기
     const firstDestination = selectedPickups[0];
-    const distance = calculateDistanceToDestination(firstDestination);
-    const estimatedTime = Math.round(distance * 2); // 대략적인 소요시간 (분)
+    console.log('첫 번째 수거지:', firstDestination);
 
-    Alert.alert(
-      '내비게이션 시작',
-      `${selectedPickups.length}개의 수거지를 순서대로 안내합니다.\n\n첫 번째 수거지:\n${firstDestination.name || '수거지 1'}\n${firstDestination.address || '주소 정보 없음'}\n거리: ${distance.toFixed(1)}km\n예상 소요시간: ${estimatedTime}분\n\n첫 번째 목적지부터 시작하시겠습니까?`,
-      [
+    if (!firstDestination) {
+      console.log('첫 번째 수거지 정보가 없음');
+      showModal({
+        title: '오류',
+        message: '첫 번째 수거지 정보를 찾을 수 없습니다.',
+        type: 'error',
+        buttons: [
+          { text: '확인', style: 'cancel' }
+        ]
+      });
+      return;
+    }
+
+    const distance = calculateDistanceToDestination(firstDestination);
+    const estimatedTime = Math.round(distance * 2);
+
+    console.log('첫 번째 수거지 거리:', distance, 'km');
+    console.log('예상 시간:', estimatedTime, '분');
+
+    showModal({
+      title: '내비게이션 시작',
+      message: `${selectedPickups.length}개의 수거지를 순서대로 안내합니다.\n\n첫 번째 수거지:\n${firstDestination.name || '수거지 1'}\n${firstDestination.address || '주소 정보 없음'}\n거리: ${distance.toFixed(1)}km\n예상 소요시간: ${estimatedTime}분\n\n첫 번째 목적지부터 시작하시겠습니까?`,
+      type: 'default',
+      buttons: [
+        { text: '취소', style: 'cancel' },
         {
           text: '단계별 안내 시작',
-          onPress: navigateToCurrentWaypoint
-        },
-        {
-          text: '취소',
-          style: 'cancel'
+          onPress: () => {
+            console.log('단계별 안내 시작 버튼 클릭됨');
+            // 상태 업데이트 후 약간의 지연을 두고 실행
+            setTimeout(() => {
+              navigateToCurrentWaypoint();
+            }, 100);
+          }
         }
       ]
-    );
+    });
   };
 
   // 거리 계산 함수 추가
   const calculateDistanceToDestination = (destination) => {
-    const R = 6371; // 지구 반지름 (km)
-    const dLat = (destination.latitude - currentLocation.latitude) * Math.PI / 180;
-    const dLng = (destination.longitude - currentLocation.longitude) * Math.PI / 180;
-    const a =
-      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-      Math.cos(currentLocation.latitude * Math.PI / 180) * Math.cos(destination.latitude * Math.PI / 180) *
-      Math.sin(dLng / 2) * Math.sin(dLng / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    return R * c;
+    try {
+      if (!destination || !destination.latitude || !destination.longitude) {
+        console.warn('목적지 정보가 올바르지 않음:', destination);
+        return 0;
+      }
+
+      if (!currentLocation || !currentLocation.latitude || !currentLocation.longitude) {
+        console.warn('현재 위치 정보가 올바르지 않음:', currentLocation);
+        return 0;
+      }
+
+      const R = 6371; // 지구 반지름 (km)
+      const dLat = (destination.latitude - currentLocation.latitude) * Math.PI / 180;
+      const dLng = (destination.longitude - currentLocation.longitude) * Math.PI / 180;
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(currentLocation.latitude * Math.PI / 180) * Math.cos(destination.latitude * Math.PI / 180) *
+        Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distance = R * c;
+
+      console.log('거리 계산 결과:', distance, 'km');
+      return distance;
+    } catch (error) {
+      console.error('거리 계산 오류:', error);
+      return 0;
+    }
   };
 
   const startMultipleNavigation = () => {
@@ -1977,6 +2144,16 @@ const executeTMap = async () => {
           <RouteInfoPanel />
         )}
       </View>
+
+      {/* 커스텀 모달 추가 */}
+      <CustomModal
+        visible={modalConfig.visible}
+        title={modalConfig.title}
+        message={modalConfig.message}
+        buttons={modalConfig.buttons}
+        type={modalConfig.type}
+        onClose={hideModal}
+      />
     </View>
   );
 };
