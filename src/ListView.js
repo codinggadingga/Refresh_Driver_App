@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  FlatList, 
-  StyleSheet, 
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  FlatList,
+  StyleSheet,
   ActivityIndicator,
   Switch,
   Alert,
@@ -12,13 +12,14 @@ import {
   ScrollView
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { SafeAreaView as SafeArea, useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const ListView = ({ 
-  activeTab, 
-  setActiveTab, 
-  pickupList, 
-  selectedPickups, 
-  togglePickupSelection, 
+const ListView = ({
+  activeTab,
+  setActiveTab,
+  pickupList,
+  selectedPickups,
+  togglePickupSelection,
   routeOptimized,
   toggleRouteOptimization,
   startRouteWithSelectedPickups,
@@ -45,6 +46,8 @@ const ListView = ({
   const [currentLocationDistrict, setCurrentLocationDistrict] = useState(null);
   const [isLocationBasedFilter, setIsLocationBasedFilter] = useState(false);
   const [hasInitialAutoSelect, setHasInitialAutoSelect] = useState(false);
+  const insets = useSafeAreaInsets();
+  const [isFilterExpanded, setIsFilterExpanded] = useState(false);
 
   // 폐기물 타입별 색상
   const getWasteColor = useMemo(() => {
@@ -60,10 +63,10 @@ const ListView = ({
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * 
-      Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
     return R * c;
   }, []);
 
@@ -77,7 +80,7 @@ const ListView = ({
   // 현재 위치에서 수거지까지의 거리
   const calculateDistanceFromCurrentLocation = useCallback((pickupId) => {
     if (!location || !pickupCoordinates) return null;
-    
+
     let coords = null;
     if (Array.isArray(pickupCoordinates)) {
       const coordData = pickupCoordinates.find(item => item.id === pickupId);
@@ -87,9 +90,9 @@ const ListView = ({
     } else {
       coords = pickupCoordinates[pickupId];
     }
-    
+
     if (!coords) return null;
-    
+
     return calculateDistanceBetweenPoints(
       location.latitude, location.longitude,
       coords.latitude, coords.longitude
@@ -128,7 +131,7 @@ const ListView = ({
   const filterByTimeSlot = useCallback((item, timeSlot) => {
     if (timeSlot === 'all') return true;
     if (!item.pickupDate) return timeSlot === 'undefined';
-    
+
     try {
       const hour = new Date(item.pickupDate).getHours();
       switch (timeSlot) {
@@ -146,37 +149,37 @@ const ListView = ({
   // 이용 가능한 구 목록
   const availableDistricts = useMemo(() => {
     if (!pickupList || !Array.isArray(pickupList)) return ['전체'];
-    
+
     const districts = new Set();
     pickupList.forEach(item => {
       const district = extractDistrict(item.address?.roadNameAddress);
       districts.add(district);
     });
-    
+
     let districtList = ['전체', ...Array.from(districts).sort()];
     if (isLocationBasedFilter && currentLocationDistrict) {
       districtList = ['전체', currentLocationDistrict];
     }
-    
+
     return districtList;
   }, [pickupList, extractDistrict, isLocationBasedFilter, currentLocationDistrict]);
 
   // 여러 수거지를 한 번에 선택하는 함수
   const selectMultiplePickups = useCallback((pickupsToSelect) => {
     if (!pickupsToSelect || pickupsToSelect.length === 0) return;
-    
+
     // 새로 선택할 수거지들을 올바른 형태로 변환
     const newSelections = pickupsToSelect.map(pickup => ({
       id: pickup.pickupId,
       pickupId: pickup.pickupId,
       ...pickup
     }));
-    
+
     console.log('한 번에 선택할 수거지들:', newSelections.map(p => ({
       id: p.pickupId,
       name: p.address?.name
     })));
-    
+
     // setSelectedPickups가 prop으로 전달되었다면 사용
     if (typeof setSelectedPickups === 'function') {
       setSelectedPickups(newSelections);
@@ -184,7 +187,7 @@ const ListView = ({
       // 대안: 기존 방식으로 각각 선택 (하지만 중복 선택 방지)
       newSelections.forEach((pickup, index) => {
         setTimeout(() => {
-          const isAlreadySelected = selectedPickups.some(p => 
+          const isAlreadySelected = selectedPickups.some(p =>
             p.id === pickup.pickupId || p.pickupId === pickup.pickupId
           );
           if (!isAlreadySelected) {
@@ -213,7 +216,7 @@ const ListView = ({
         filtered = filtered.filter(item => item.isCompleted);
         break;
     }
-    
+
     // 구별 필터링
     if (selectedDistrict !== '전체') {
       filtered = filtered.filter(item => {
@@ -221,7 +224,7 @@ const ListView = ({
         return itemDistrict === selectedDistrict;
       });
     }
-    
+
     // 현재 위치 기반 필터링
     if (isLocationBasedFilter && currentLocationDistrict) {
       filtered = filtered.filter(item => {
@@ -229,49 +232,49 @@ const ListView = ({
         return itemDistrict === currentLocationDistrict;
       });
     }
-    
+
     // 시간대별 필터링
     if (selectedTimeSlot !== 'all') {
       filtered = filtered.filter(item => filterByTimeSlot(item, selectedTimeSlot));
     }
-    
+
     // 정렬
     if (sortType === 'time') {
       filtered.sort((a, b) => {
         const priorityA = getTimePriority(a.pickupDate);
         const priorityB = getTimePriority(b.pickupDate);
-        
+
         if (priorityA !== priorityB) return priorityA - priorityB;
-        
+
         if (!a.pickupDate && !b.pickupDate) return 0;
         if (!a.pickupDate) return 1;
         if (!b.pickupDate) return -1;
-        
+
         return new Date(a.pickupDate) - new Date(b.pickupDate);
       });
     } else if (sortType === 'distance' && location) {
       filtered.sort((a, b) => {
         const distanceA = calculateDistanceFromCurrentLocation(a.pickupId);
         const distanceB = calculateDistanceFromCurrentLocation(b.pickupId);
-        
+
         if (distanceA === null && distanceB === null) return 0;
         if (distanceA === null) return 1;
         if (distanceB === null) return -1;
-        
+
         return distanceA - distanceB;
       });
     }
-    
+
     setFilteredList(filtered);
-  }, [activeTab, pickupList, selectedDistrict, selectedTimeSlot, sortType, location, 
-      calculateDistanceFromCurrentLocation, getTimePriority, extractDistrict, 
-      filterByTimeSlot, isLocationBasedFilter, currentLocationDistrict]);
+  }, [activeTab, pickupList, selectedDistrict, selectedTimeSlot, sortType, location,
+    calculateDistanceFromCurrentLocation, getTimePriority, extractDistrict,
+    filterByTimeSlot, isLocationBasedFilter, currentLocationDistrict]);
 
   // 처음 로드될 때 자동으로 최적 경로 생성 (수정된 버전)
   useEffect(() => {
     if (pickupList && Array.isArray(pickupList) && location && pickupCoordinates && !hasInitialAutoSelect) {
       const incompletePickups = pickupList.filter(item => !item.isCompleted);
-      
+
       if (incompletePickups.length > 0) {
         // 거리순으로 정렬된 상위 5개
         const pickupsWithDistance = incompletePickups
@@ -292,16 +295,16 @@ const ListView = ({
             name: p.address?.name,
             distance: calculateDistanceFromCurrentLocation(p.pickupId)?.toFixed(1) + 'km'
           })));
-          
+
           // 기존 선택 초기화
           if (typeof clearAutoSelection === 'function') {
             clearAutoSelection();
           }
-          
+
           // 한 번에 여러 수거지 선택
           setTimeout(() => {
             selectMultiplePickups(pickupsWithDistance);
-            
+
             // 경로 최적화 활성화
             if (!routeOptimized && typeof toggleRouteOptimization === 'function') {
               setTimeout(() => {
@@ -309,13 +312,13 @@ const ListView = ({
               }, 100);
             }
           }, 200);
-          
+
           setHasInitialAutoSelect(true);
         }
       }
     }
-  }, [pickupList, location, pickupCoordinates, hasInitialAutoSelect, calculateDistanceFromCurrentLocation, 
-      selectMultiplePickups, clearAutoSelection, routeOptimized, toggleRouteOptimization]);
+  }, [pickupList, location, pickupCoordinates, hasInitialAutoSelect, calculateDistanceFromCurrentLocation,
+    selectMultiplePickups, clearAutoSelection, routeOptimized, toggleRouteOptimization]);
 
   // 필터링 및 정렬 변경 시 리스트 업데이트
   useEffect(() => {
@@ -330,22 +333,22 @@ const ListView = ({
   // 날짜 포맷팅
   const formatPickupDate = useCallback((dateString) => {
     if (!dateString) return '시간 미정';
-    
+
     try {
       const date = new Date(dateString);
       const today = new Date();
       const isToday = date.toDateString() === today.toDateString();
-      
+
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
       const isTomorrow = date.toDateString() === tomorrow.toDateString();
-      
+
       const timeString = date.toLocaleTimeString('ko-KR', {
         hour: '2-digit', minute: '2-digit', hour12: false
       });
-      
+
       const timeLabel = getTimeLabel(dateString);
-      
+
       if (isToday) {
         return `오늘 ${timeString} (${timeLabel})`;
       } else if (isTomorrow) {
@@ -364,7 +367,7 @@ const ListView = ({
   // 현재 위치의 구 정보 가져오기
   const getCurrentLocationDistrict = useCallback(async () => {
     if (!location) return null;
-    
+
     try {
       // 실제 구현에서는 역지오코딩 API 사용
       // 임시로 달서구 반환
@@ -383,10 +386,10 @@ const ListView = ({
       Alert.alert('위치 정보 필요', '현재 위치 정보가 필요합니다.');
       return;
     }
-    
+
     const newFilterState = !isLocationBasedFilter;
     setIsLocationBasedFilter(newFilterState);
-    
+
     if (newFilterState) {
       getCurrentLocationDistrict().then(district => {
         if (district) {
@@ -447,7 +450,7 @@ const ListView = ({
       .sort((a, b) => a.distance - b.distance)
       .slice(0, 5);
 
-    console.log('수동 자동선택 - 선택할 수거지들:', pickupsWithDistance.map(p => ({ 
+    console.log('수동 자동선택 - 선택할 수거지들:', pickupsWithDistance.map(p => ({
       id: p.pickupId,
       name: p.address?.name,
       distance: p.distance?.toFixed(1) + 'km'
@@ -472,15 +475,15 @@ const ListView = ({
       Alert.alert('자동선택 완료', `가장 가까운 ${pickupsWithDistance.length}개 수거지를 선택했습니다.\n최적 경로로 설정되었습니다.`);
     }, 200);
 
-  }, [pickupList, isLocationBasedFilter, currentLocationDistrict, extractDistrict, 
-      clearAutoSelection, selectMultiplePickups, routeOptimized, toggleRouteOptimization, 
-      calculateDistanceFromCurrentLocation]);
+  }, [pickupList, isLocationBasedFilter, currentLocationDistrict, extractDistrict,
+    clearAutoSelection, selectMultiplePickups, routeOptimized, toggleRouteOptimization,
+    calculateDistanceFromCurrentLocation]);
 
   // 카드 클릭 처리
   const handleCardPress = useCallback(async (item) => {
     setSelectedItemForDetail(item);
     setShowDetailModal(true);
-    
+
     if (cachedDetails[item.pickupId]) {
       setSelectedItemForDetail(prev => ({ ...prev, details: cachedDetails[item.pickupId] }));
       return;
@@ -492,7 +495,7 @@ const ListView = ({
         `https://refresh-f5-server.o-r.kr/api/pickup/get-details?pickupId=${item.pickupId}`,
         { method: 'GET', headers: { 'Content-Type': 'application/json' } }
       );
-      
+
       if (response.ok) {
         const data = await response.json();
         setCachedDetails(prev => ({ ...prev, [item.pickupId]: data }));
@@ -516,9 +519,12 @@ const ListView = ({
     const isSelected = selectedPickups.some(p => p.id === item.pickupId || p.pickupId === item.pickupId);
     const distance = calculateDistanceFromCurrentLocation(item.pickupId);
     const district = extractDistrict(item.address?.roadNameAddress);
-    
+
+    // 선택 순서 계산
+    const selectionOrder = selectedPickups.findIndex(p => p.id === item.pickupId || p.pickupId === item.pickupId) + 1;
+
     return (
-      <TouchableOpacity 
+      <TouchableOpacity
         style={[styles.pickupItem, isSelected && styles.selectedPickupItem]}
         onPress={() => handleCardPress(item)}
         activeOpacity={0.8}
@@ -537,7 +543,7 @@ const ListView = ({
                   {item.isCompleted ? '완료' : '미완료'}
                 </Text>
               </View>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.selectionArea}
                 onPress={(e) => {
                   e.stopPropagation();
@@ -545,25 +551,38 @@ const ListView = ({
                 }}
                 hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
               >
-                <Ionicons 
-                  name={isSelected ? "checkmark-circle" : "ellipse-outline"} 
-                  size={24} 
-                  color={isSelected ? "#5c8d62" : "#ccc"} 
-                />
+                {isSelected ? (
+                  <View style={styles.selectedIconContainer}>
+                    <View style={styles.selectionOrderBadge}>
+                      <Text style={styles.selectionOrderText}>{selectionOrder}</Text>
+                    </View>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={24}
+                      color="#5c8d62"
+                    />
+                  </View>
+                ) : (
+                  <Ionicons
+                    name="ellipse-outline"
+                    size={24}
+                    color="#ccc"
+                  />
+                )}
               </TouchableOpacity>
             </View>
           </View>
-          
+
           <Text style={styles.pickupItemAddress} numberOfLines={2}>
             {item.address?.roadNameAddress || '주소 없음'}
           </Text>
-          
+
           <View style={styles.wastePreview}>
             <Ionicons name="trash-outline" size={16} color="#666" />
             <Text style={styles.wastePreviewText}>폐기물 정보 확인</Text>
             <Ionicons name="chevron-forward" size={16} color="#999" />
           </View>
-          
+
           <View style={styles.pickupItemFooter}>
             <View style={styles.timeContainer}>
               <Ionicons name="time-outline" size={14} color="#666" />
@@ -572,14 +591,14 @@ const ListView = ({
               </Text>
               {distance !== null && (
                 <>
-                  <Ionicons name="location-outline" size={14} color="#666" style={{marginLeft: 8}} />
+                  <Ionicons name="location-outline" size={14} color="#666" style={{ marginLeft: 8 }} />
                   <Text style={styles.pickupItemDistance}>{distance.toFixed(1)}km</Text>
                 </>
               )}
             </View>
-            
+
             {!item.isCompleted && (
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.completeButton}
                 onPress={(e) => {
                   e.stopPropagation();
@@ -596,22 +615,23 @@ const ListView = ({
   });
 
   return (
-    <View style={styles.container}>
+    <SafeArea style={styles.container} edges={['top', 'left', 'right']}>
       {/* 헤더 */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>수거지 목록</Text>
         <View style={styles.headerButtons}>
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={[
               styles.locationFilterButton,
               isLocationBasedFilter && styles.activeLocationFilterButton
             ]}
             onPress={toggleLocationBasedFilter}
           >
-            <Ionicons 
-              name={isLocationBasedFilter ? "location" : "location-outline"} 
-              size={16} 
-              color={isLocationBasedFilter ? "#ffffff" : "#666"} 
+            <Ionicons
+              name={isLocationBasedFilter ? "location" : "location-outline"}
+              size={16}
+              color={isLocationBasedFilter ? "#ffffff" : "#666"}
             />
             <Text style={[
               styles.locationFilterButtonText,
@@ -620,15 +640,15 @@ const ListView = ({
               내 위치
             </Text>
           </TouchableOpacity>
-          
-          <TouchableOpacity 
+
+          <TouchableOpacity
             style={styles.autoRouteButton}
             onPress={handleAutoSelectOptimalRoute}
           >
             <Ionicons name="flash" size={16} color="#ffffff" />
             <Text style={styles.autoRouteButtonText}>자동선택</Text>
           </TouchableOpacity>
-          
+
           <TouchableOpacity style={styles.mapButton} onPress={toggleViewMode}>
             <Text style={styles.mapButtonText}>지도보기</Text>
           </TouchableOpacity>
@@ -639,131 +659,164 @@ const ListView = ({
       <View style={styles.tabContainer}>
         <View style={styles.tabBar}>
           {['전체', '미완료', '완료'].map(tabName => (
-            <TouchableOpacity
-              key={tabName}
-              style={[styles.tabButton, activeTab === tabName && styles.activeTabButton]}
-              onPress={() => setActiveTab(tabName)}
-            >
-              <Text style={[
-                styles.tabButtonText,
-                activeTab === tabName && styles.activeTabButtonText
-              ]}>
-                {tabName}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        
-        {/* 구별 필터 */}
-        <View style={styles.filterBar}>
-          <Text style={styles.filterLabel}>구별:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScrollView}>
-            {availableDistricts.map(district => {
-              const isDisabled = isLocationBasedFilter && 
-                                currentLocationDistrict && 
-                                district !== '전체' && 
-                                district !== currentLocationDistrict;
-              
-              return (
-                <TouchableOpacity
-                  key={district}
-                  style={[
-                    styles.filterButton,
-                    selectedDistrict === district && styles.activeFilterButton,
-                    isDisabled && styles.disabledFilterButton
-                  ]}
-                  onPress={() => {
-                    if (isDisabled) {
-                      Alert.alert('선택 불가', `현재 위치 기반 필터링이 활성화되어 있습니다.\n${currentLocationDistrict}만 선택 가능합니다.`);
-                      return;
-                    }
-                    setSelectedDistrict(district);
-                  }}
-                  disabled={isDisabled}
-                >
-                  <Text style={[
-                    styles.filterButtonText,
-                    selectedDistrict === district && styles.activeFilterButtonText,
-                    isDisabled && styles.disabledFilterButtonText
-                  ]}>
-                    {district}{isDisabled && ' 🔒'}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        </View>
-
-        {/* 시간대별 필터 */}
-        <View style={styles.filterBar}>
-          <Text style={styles.filterLabel}>시간대:</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScrollView}>
-            {[
-              ['all', '전체'],
-              ['morning', '오전(06-11)'],
-              ['afternoon', '오후(11-16)'],
-              ['evening', '저녁(16-21)'],
-              ['night', '야간(21-06)']
-            ].map(([slot, label]) => (
               <TouchableOpacity
-                key={slot}
-                style={[
-                  styles.filterButton,
-                  selectedTimeSlot === slot && styles.activeFilterButton
-                ]}
-                onPress={() => setSelectedTimeSlot(slot)}
+                key={tabName}
+                style={[styles.tabButton, activeTab === tabName && styles.activeTabButton]}
+                onPress={() => setActiveTab(tabName)}
               >
                 <Text style={[
-                  styles.filterButtonText,
-                  selectedTimeSlot === slot && styles.activeFilterButtonText
+                  styles.tabButtonText,
+                  activeTab === tabName && styles.activeTabButtonText
                 ]}>
-                  {label}
+                  {tabName}
                 </Text>
               </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
-        
-        {/* 정렬 방식 */}
-        <View style={styles.sortBar}>
-          <Text style={styles.sortLabel}>정렬:</Text>
+          ))}
           <TouchableOpacity
-            style={[styles.sortButton, sortType === 'distance' && styles.activeSortButton]}
-            onPress={() => setSortType('distance')}
+            style={styles.filterToggleButton}
+            onPress={() => setIsFilterExpanded(!isFilterExpanded)}
           >
-            <Ionicons name="location-outline" size={16} color={sortType === 'distance' ? '#ffffff' : '#666'} />
-            <Text style={[styles.sortButtonText, sortType === 'distance' && styles.activeSortButtonText]}>
-              거리순 (기본)
-            </Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity
-            style={[styles.sortButton, sortType === 'time' && styles.activeSortButton]}
-            onPress={() => setSortType('time')}
-          >
-            <Ionicons name="time-outline" size={16} color={sortType === 'time' ? '#ffffff' : '#666'} />
-            <Text style={[styles.sortButtonText, sortType === 'time' && styles.activeSortButtonText]}>
-              시간대별
+            <Ionicons
+              name={isFilterExpanded ? "chevron-up" : "chevron-down"}
+              size={16}
+              color="#666"
+            />
+            <Text style={styles.filterToggleText}>
+              {isFilterExpanded ? '필터 접기' : '필터 펼치기'}
             </Text>
           </TouchableOpacity>
         </View>
+
+        {/* 접을 수 있는 필터 섹션 */}
+        {isFilterExpanded && (
+          <View style={styles.collapsibleFilters}>
+            {/* 구별 필터 */}
+            <View style={styles.filterBar}>
+              <Text style={styles.filterLabel}>구별:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScrollView}>
+                {availableDistricts.map(district => {
+                  const isDisabled = isLocationBasedFilter &&
+                    currentLocationDistrict &&
+                    district !== '전체' &&
+                    district !== currentLocationDistrict;
+
+                  return (
+                    <TouchableOpacity
+                      key={district}
+                      style={[
+                        styles.filterButton,
+                        selectedDistrict === district && styles.activeFilterButton,
+                        isDisabled && styles.disabledFilterButton
+                      ]}
+                      onPress={() => {
+                        if (isDisabled) {
+                          Alert.alert('선택 불가', `현재 위치 기반 필터링이 활성화되어 있습니다.\n${currentLocationDistrict}만 선택 가능합니다.`);
+                          return;
+                        }
+                        setSelectedDistrict(district);
+                      }}
+                      disabled={isDisabled}
+                    >
+                      <Text style={[
+                        styles.filterButtonText,
+                        selectedDistrict === district && styles.activeFilterButtonText,
+                        isDisabled && styles.disabledFilterButtonText
+                      ]}>
+                        {district}{isDisabled && ' 🔒'}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+            </View>
+
+            {/* 시간대별 필터 */}
+            <View style={styles.filterBar}>
+              <Text style={styles.filterLabel}>시간대:</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScrollView}>
+                {[
+                  ['all', '전체'],
+                  ['morning', '오전(06-11)'],
+                  ['afternoon', '오후(11-16)'],
+                  ['evening', '저녁(16-21)'],
+                  ['night', '야간(21-06)']
+                ].map(([slot, label]) => (
+                  <TouchableOpacity
+                    key={slot}
+                    style={[
+                      styles.filterButton,
+                      selectedTimeSlot === slot && styles.activeFilterButton
+                    ]}
+                    onPress={() => setSelectedTimeSlot(slot)}
+                  >
+                    <Text style={[
+                      styles.filterButtonText,
+                      selectedTimeSlot === slot && styles.activeFilterButtonText
+                    ]}>
+                      {label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+
+            {/* 정렬 방식 */}
+            <View style={styles.sortBar}>
+              <Text style={styles.sortLabel}>정렬:</Text>
+              <TouchableOpacity
+                style={[styles.sortButton, sortType === 'distance' && styles.activeSortButton]}
+                onPress={() => setSortType('distance')}
+              >
+                <Ionicons name="location-outline" size={16} color={sortType === 'distance' ? '#ffffff' : '#666'} />
+                <Text style={[styles.sortButtonText, sortType === 'distance' && styles.activeSortButtonText]}>
+                  거리순 (기본)
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.sortButton, sortType === 'time' && styles.activeSortButton]}
+                onPress={() => setSortType('time')}
+              >
+                <Ionicons name="time-outline" size={16} color={sortType === 'time' ? '#ffffff' : '#666'} />
+                <Text style={[styles.sortButtonText, sortType === 'time' && styles.activeSortButtonText]}>
+                  시간대별
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
       </View>
-      
+
       {/* 필터 정보 표시 */}
       <View style={styles.filterInfo}>
         <Text style={styles.filterInfoText}>
           {isLocationBasedFilter && currentLocationDistrict && `📍 현재 위치: ${currentLocationDistrict} • `}
           {selectedDistrict !== '전체' && `${selectedDistrict} • `}
-          {selectedTimeSlot !== 'all' && `${
-            selectedTimeSlot === 'morning' ? '오전' :
+          {selectedTimeSlot !== 'all' && `${selectedTimeSlot === 'morning' ? '오전' :
             selectedTimeSlot === 'afternoon' ? '오후' :
-            selectedTimeSlot === 'evening' ? '저녁' :
-            selectedTimeSlot === 'night' ? '야간' : '전체시간대'
-          } • `}
+              selectedTimeSlot === 'evening' ? '저녁' :
+                selectedTimeSlot === 'night' ? '야간' : '전체시간대'
+            } • `}
           총 {filteredList.length}개 수거지
         </Text>
+
+        {/* 활성 필터가 있을 때 빠른 초기화 버튼 */}
+        {(selectedDistrict !== '전체' || selectedTimeSlot !== 'all' || isLocationBasedFilter) && (
+          <TouchableOpacity
+            style={styles.quickResetButton}
+            onPress={() => {
+              setSelectedDistrict('전체');
+              setSelectedTimeSlot('all');
+              setIsLocationBasedFilter(false);
+              setCurrentLocationDistrict(null);
+            }}
+          >
+            <Ionicons name="close-circle" size={16} color="#999" />
+            <Text style={styles.quickResetText}>초기화</Text>
+          </TouchableOpacity>
+        )}
       </View>
-      
+
       {/* 컨텐츠 */}
       {isLoading ? (
         <View style={styles.loadingContainer}>
@@ -775,18 +828,24 @@ const ListView = ({
           data={filteredList}
           renderItem={({ item }) => <PickupItem item={item} />}
           keyExtractor={(item) => item.pickupId.toString()}
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={[
+            styles.listContent,
+            {
+              paddingBottom: insets.bottom + (selectedPickups.length > 0 ? 140 : 40) // 여백 증가
+            }
+          ]}
+          showsVerticalScrollIndicator={false}
           ListEmptyComponent={() => (
             <View style={styles.emptyContainer}>
               <Ionicons name="document-outline" size={64} color="#ccc" />
               <Text style={styles.emptyText}>
                 {selectedDistrict !== '전체' || selectedTimeSlot !== 'all' || isLocationBasedFilter
-                  ? '해당 조건에 맞는 수거지가 없습니다' 
+                  ? '해당 조건에 맞는 수거지가 없습니다'
                   : '수거지가 없습니다'
                 }
               </Text>
               {(selectedDistrict !== '전체' || selectedTimeSlot !== 'all' || isLocationBasedFilter) && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.resetFilterButton}
                   onPress={() => {
                     setSelectedDistrict('전체');
@@ -802,13 +861,13 @@ const ListView = ({
           )}
         />
       )}
-      
+
       {/* 내비게이션 버튼 */}
       {selectedPickups.length > 0 && (
-        <View style={styles.navigationContainer}>
+        <View style={[styles.navigationContainer, { paddingBottom: insets.bottom + 16 }]}>
           <View style={styles.navigationInfo}>
             <Text style={styles.navigationInfoText}>
-              {selectedPickups.length}개 수거지 선택됨
+              {selectedPickups.length}개 수거지 선택됨 (순서대로 안내)
             </Text>
             <View style={styles.optimizeContainer}>
               <Text style={styles.optimizeText}>경로 최적화</Text>
@@ -820,13 +879,13 @@ const ListView = ({
               />
             </View>
           </View>
-          
+
           <View style={styles.autoSelectionButtons}>
             <TouchableOpacity style={styles.clearSelectionButton} onPress={clearAutoSelection}>
               <Text style={styles.clearSelectionButtonText}>선택 초기화</Text>
             </TouchableOpacity>
           </View>
-          
+
           <TouchableOpacity style={styles.navigationButton} onPress={launchKakaoNavigation}>
             <Text style={styles.navigationButtonText}>내비게이션 시작</Text>
           </TouchableOpacity>
@@ -836,14 +895,14 @@ const ListView = ({
       {/* 상세 정보 모달 */}
       <Modal
         visible={showDetailModal}
-        animationType="none"
+        animationType="slide"
         transparent={false}
         onRequestClose={closeModal}
       >
-        <View style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
+        <SafeArea style={styles.modalContainer} edges={['top', 'left', 'right']}>
+          <View style={[styles.modalHeader, { paddingTop: insets.top + 16 }]}>
             <TouchableOpacity style={styles.closeButton} onPress={closeModal}>
-              <Ionicons name="close" size={24} color="#666"/>
+              <Ionicons name="close" size={24} color="#666" />
             </TouchableOpacity>
             <Text style={styles.modalTitle}>수거지 상세 정보</Text>
             <View style={styles.placeholder} />
@@ -890,19 +949,19 @@ const ListView = ({
                         <View style={styles.priceRow}>
                           <Text style={styles.priceLabel}>예상 금액</Text>
                           <Text style={styles.priceValue}>
-                            {selectedItemForDetail.details.pricePreview 
-                              ? `${selectedItemForDetail.details.pricePreview.toLocaleString()}원` 
+                            {selectedItemForDetail.details.pricePreview
+                              ? `${selectedItemForDetail.details.pricePreview.toLocaleString()}원`
                               : '가격 미정'}
                           </Text>
                         </View>
                         <View style={styles.priceRow}>
                           <Text style={styles.priceLabel}>결제 상태</Text>
-                          <Text style={[styles.priceValue, {color: selectedItemForDetail.details.payment ? '#10B981' : '#F59E0B'}]}>
+                          <Text style={[styles.priceValue, { color: selectedItemForDetail.details.payment ? '#10B981' : '#F59E0B' }]}>
                             {selectedItemForDetail.details.payment ? '결제 완료' : '결제 대기'}
                           </Text>
                         </View>
                       </View>
-                      
+
                       {selectedItemForDetail.details.details.map((waste, index) => (
                         <View key={`${waste.wasteId}-${index}`} style={styles.wasteCard}>
                           <View style={[styles.wasteTypeIndicator, { backgroundColor: getWasteColor(waste.wasteId) }]} />
@@ -951,8 +1010,8 @@ const ListView = ({
           </ScrollView>
 
           {selectedItemForDetail && (
-            <View style={styles.modalFooter}>
-              <TouchableOpacity 
+            <View style={[styles.modalFooter, { paddingBottom: insets.bottom + 16 }]}>
+              <TouchableOpacity
                 style={styles.selectButton}
                 onPress={() => {
                   togglePickupSelection(selectedItemForDetail);
@@ -963,9 +1022,9 @@ const ListView = ({
                   {selectedPickups.some(p => p.id === selectedItemForDetail.pickupId) ? '선택 해제' : '경로에 추가'}
                 </Text>
               </TouchableOpacity>
-              
+
               {!selectedItemForDetail.isCompleted && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.completeModalButton}
                   onPress={() => {
                     completePickup(selectedItemForDetail.pickupId);
@@ -977,9 +1036,9 @@ const ListView = ({
               )}
             </View>
           )}
-        </View>
+        </SafeArea>
       </Modal>
-    </View>
+    </SafeArea>
   );
 };
 
@@ -997,6 +1056,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   headerTitle: {
     fontSize: 20,
@@ -1006,15 +1070,16 @@ const styles = StyleSheet.create({
   headerButtons: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
   },
   locationFilterButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 10, // 터치 영역 확대
+    paddingHorizontal: 14,
     backgroundColor: '#f0f0f0',
     borderRadius: 20,
-    marginRight: 8,
+    minHeight: 40, // 최소 터치 영역 보장
   },
   activeLocationFilterButton: {
     backgroundColor: '#4B89DC',
@@ -1031,11 +1096,11 @@ const styles = StyleSheet.create({
   autoRouteButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     backgroundColor: '#FF6B35',
     borderRadius: 20,
-    marginRight: 8,
+    minHeight: 40,
   },
   autoRouteButtonText: {
     fontSize: 14,
@@ -1044,10 +1109,12 @@ const styles = StyleSheet.create({
     marginLeft: 4,
   },
   mapButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     backgroundColor: '#5c8d62',
     borderRadius: 20,
+    minHeight: 40,
+    justifyContent: 'center',
   },
   mapButtonText: {
     fontSize: 14,
@@ -1063,13 +1130,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingVertical: 8,
     paddingHorizontal: 16,
+    justifyContent: 'space-around'
   },
   tabButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
     marginRight: 8,
     borderRadius: 20,
     backgroundColor: '#f0f0f0',
+    minHeight: 40, // 터치 영역 확대
+    justifyContent: 'center',
   },
   activeTabButton: {
     backgroundColor: '#5c8d62',
@@ -1101,13 +1171,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   filterButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     marginRight: 8,
     borderRadius: 16,
     backgroundColor: '#f0f0f0',
     minWidth: 60,
+    minHeight: 36, // 터치 영역 확대
     alignItems: 'center',
+    justifyContent: 'center',
   },
   activeFilterButton: {
     backgroundColor: '#5c8d62',
@@ -1144,11 +1216,12 @@ const styles = StyleSheet.create({
   sortButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     marginRight: 8,
     borderRadius: 16,
     backgroundColor: '#f0f0f0',
+    minHeight: 36,
   },
   activeSortButton: {
     backgroundColor: '#5c8d62',
@@ -1170,6 +1243,9 @@ const styles = StyleSheet.create({
     color: '#ccc',
   },
   filterInfo: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 8,
     backgroundColor: '#f8f9fa',
@@ -1180,15 +1256,17 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666',
     fontWeight: '500',
+    flex: 1,
   },
   listContent: {
     padding: 12,
-    paddingBottom: 100,
+    paddingBottom: 200,
   },
   pickupItem: {
     backgroundColor: '#ffffff',
     borderRadius: 12,
     marginBottom: 12,
+    marginHorizontal: 4, // 좌우 여백 추가
     padding: 16,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
@@ -1249,7 +1327,8 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   selectionArea: {
-    padding: 4,
+    padding: 8, // 터치 영역 확대
+    borderRadius: 20,
   },
   pickupItemAddress: {
     fontSize: 14,
@@ -1292,10 +1371,12 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   completeButton: {
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     backgroundColor: '#5c8d62',
     borderRadius: 16,
+    minHeight: 36,
+    justifyContent: 'center',
   },
   completeButtonText: {
     fontSize: 12,
@@ -1326,10 +1407,12 @@ const styles = StyleSheet.create({
   },
   resetFilterButton: {
     marginTop: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
     backgroundColor: '#5c8d62',
     borderRadius: 20,
+    minHeight: 40,
+    justifyContent: 'center',
   },
   resetFilterButtonText: {
     fontSize: 14,
@@ -1346,16 +1429,18 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#e0e0e0',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    minHeight: 120, // 최소 높이 설정
   },
   navigationInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
   },
   navigationInfoText: {
     fontSize: 14,
@@ -1375,11 +1460,12 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   clearSelectionButton: {
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
     backgroundColor: '#f0f0f0',
-    borderRadius: 6,
+    borderRadius: 8,
     alignItems: 'center',
+    minHeight: 40,
   },
   clearSelectionButtonText: {
     fontSize: 12,
@@ -1388,9 +1474,15 @@ const styles = StyleSheet.create({
   },
   navigationButton: {
     backgroundColor: '#4B89DC',
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
+    minHeight: 48,
+    shadowColor: '#4B89DC',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
   navigationButtonText: {
     fontSize: 16,
@@ -1410,12 +1502,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   closeButton: {
-    width: 40,
-    height: 40,
+    width: 44,
+    height: 44,
     justifyContent: 'center',
     alignItems: 'center',
+    borderRadius: 22,
+    backgroundColor: '#f8f9fa',
   },
   modalTitle: {
     fontSize: 18,
@@ -1577,13 +1676,19 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#e0e0e0',
     gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   selectButton: {
     flex: 1,
     backgroundColor: '#5c8d62',
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
+    minHeight: 48,
   },
   selectButtonText: {
     fontSize: 16,
@@ -1593,12 +1698,74 @@ const styles = StyleSheet.create({
   completeModalButton: {
     flex: 1,
     backgroundColor: '#FF6B35',
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
     alignItems: 'center',
+    minHeight: 48,
   },
   completeModalButtonText: {
     fontSize: 16,
+    fontWeight: 'bold',
+    color: '#ffffff',
+  },
+  filterToggleButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: '#f8f9fa',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    marginRight: 8,
+  },
+  filterToggleText: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+    marginLeft: 4,
+  },
+  collapsibleFilters: {
+    backgroundColor: '#f8f9fa',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
+  quickResetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+  },
+  quickResetText: {
+    fontSize: 10,
+    color: '#999',
+    marginLeft: 4,
+  },
+  selectedIconContainer: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectionOrderBadge: {
+    position: 'absolute',
+    top: -8,
+    right: -8,
+    backgroundColor: '#FF6B35',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1,
+    borderWidth: 2,
+    borderColor: '#ffffff',
+  },
+  selectionOrderText: {
+    fontSize: 10,
     fontWeight: 'bold',
     color: '#ffffff',
   },
