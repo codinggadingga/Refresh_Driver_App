@@ -9,12 +9,13 @@ import {
   Platform,
   SafeAreaView,
   StatusBar,
-  ActivityIndicator
+  ActivityIndicator,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import { SafeAreaView as SafeArea, useSafeAreaInsets } from 'react-native-safe-area-context';
 import CustomModal from './CustomModal';
 
 const { width, height } = Dimensions.get('window');
@@ -22,6 +23,7 @@ const { width, height } = Dimensions.get('window');
 const NavigationView = () => {
   const navigation = useNavigation();
   const route = useRoute();
+  const insets = useSafeAreaInsets();
   
   // route.params에서 필요한 데이터 추출
   const params = route?.params || {};
@@ -127,25 +129,45 @@ const NavigationView = () => {
   // 수거 완료 처리 함수
   const handleCollectionComplete = async () => {
     try {
-      // API 호출하여 pickupProgress를 true로 업데이트
-      const response = await fetch('https://refresh-f5-server.o-r.kr/api/pickup/update-pickup', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          pickupId: pickupId,
-          pickupProgress: true
-        })
-      });
-  
-      if (!response.ok) {
-        throw new Error('수거 완료 업데이트 실패');
+      // pickupId 안전하게 추출
+      let pickupId = null;
+
+      if (route && route.params && route.params.pickupId) {
+        pickupId = route.params.pickupId;
       }
-  
-      const result = await response.json();
-      console.log('수거 완료 업데이트 성공:', result);
-  
+      else if (waypoints && waypoints.length > 0 && currentWaypointIndex < waypoints.length) {
+        const currentWaypoint = waypoints[currentWaypointIndex];
+        pickupId = currentWaypoint.id || currentWaypoint.pickupId;
+      }
+      else if (destination && destination.id) {
+        pickupId = destination.id;
+      }
+
+      console.log('추출된 pickupId:', pickupId);
+
+      // pickupId가 있는 경우에만 API 호출
+      if (pickupId) {
+        const response = await fetch('https://refresh-f5-server.o-r.kr/api/pickup/update-pickup', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            pickupId: pickupId,
+            pickupProgress: true
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('API 오류 응답:', response.status, errorText);
+          throw new Error(`수거 완료 업데이트 실패: ${response.status}`);
+        }
+
+        const result = await response.json();
+        console.log('수거 완료 업데이트 성공:', result);
+      }
+
       // 기존 로직 실행
       if (currentWaypointIndex < waypoints.length - 1) {
         const nextIndex = currentWaypointIndex + 1;
@@ -159,7 +181,8 @@ const NavigationView = () => {
             { text: '확인' }
           ]
         });
-               
+
+        // WebView에 메시지 전송
         if (webViewRef.current && webViewLoaded) {
           try {
             webViewRef.current.postMessage(JSON.stringify({
@@ -170,21 +193,36 @@ const NavigationView = () => {
             console.log('경유지 업데이트 메시지 전송 오류:', error);
           }
         }
-               
+
         setShowCompleteButton(false);
       } else {
+        // 모든 경유지 완료 - 목록보기로 전환
         showModal({
           title: '모든 수거 완료',
-          message: '모든 경유지 수거가 완료되었습니다.\n목적지로 안내합니다.',
+          message: '모든 경유지 수거가 완료되었습니다!\n수고하셨습니다.\n\n어떻게 하시겠습니까?',
           type: 'success',
           buttons: [
             {
-              text: '확인',
-              onPress: () => navigation.goBack()
+              text: '목록보기',
+              onPress: () => {
+                // 목록보기 상태로 메인화면으로 이동
+                navigation.navigate('pickupMain', {
+                  showListView: true,
+                  resetSelections: true
+                });
+              }
+            },
+            {
+              text: '지도화면으로',
+              style: 'cancel',
+              onPress: () => {
+                navigation.goBack();
+              }
             }
           ]
         });
-               
+
+        // WebView에 메시지 전송
         if (webViewRef.current && webViewLoaded) {
           try {
             webViewRef.current.postMessage(JSON.stringify({
@@ -194,10 +232,10 @@ const NavigationView = () => {
             console.log('목적지 안내 메시지 전송 오류:', error);
           }
         }
-               
+
         setShowCompleteButton(false);
       }
-  
+
     } catch (error) {
       console.error('수거 완료 처리 오류:', error);
       showModal({
@@ -214,7 +252,11 @@ const NavigationView = () => {
                 setCurrentWaypointIndex(nextIndex);
                 setShowCompleteButton(false);
               } else {
-                navigation.goBack();
+                // 오류가 발생해도 목록보기로 이동
+                navigation.navigate('pickupMain', {
+                  showListView: true,
+                  resetSelections: true
+                });
               }
             }
           }
@@ -1387,10 +1429,29 @@ const NavigationView = () => {
         case 'DESTINATION_REACHED':
           console.log('목적지 도착');
           setIsNavigating(false);
-          Alert.alert('목적지 도착', '내비게이션을 종료합니다.', [
-            { text: '확인', onPress: () => navigation.goBack() }
-          ]);
-          break;
+
+          showModal({
+            title: '목적지 도착',
+            message: '목적지에 도착했습니다!\n수고하셨습니다.\n\n어떻게 하시겠습니까?',
+            type: 'success',
+            buttons: [
+              {
+                text: '목록보기',
+                onPress: () => {
+                  navigation.navigate('pickupMain', {
+                    showListView: true,
+                    resetSelections: true
+                  });
+                }
+              },
+              {
+                text: '지도화면으로',
+                style: 'cancel',
+                onPress: () => navigation.goBack()
+              }
+            ]
+          });
+            break;
           
         case 'ERROR':
           console.error('내비게이션 오류:', data.message);
@@ -1495,209 +1556,200 @@ const NavigationView = () => {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor="#1a73e8" />
-      
-      {/* 상단 네비게이션 바 */}
-      <View style={styles.topNavBar}>
-        <View style={styles.topNavLeft}>
-          <View style={styles.turnIndicator}>
-            <Ionicons name={getTurnIcon()} size={32} color="#fff" />
-          </View>
-          <View style={styles.instructionContainer}>
-            <Text style={styles.nextInstructionDistance}>
-              {nextInstructionDistance || '계산 중...'}
-            </Text>
-            <Text style={styles.nextInstructionText}>
-              {nextInstruction || '경로 계산 중...'}
-            </Text>
-          </View>
-        </View>
-        
-        {/* 속도 표시 영역 */}
+    <SafeArea style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#000000" />
+
+      {/* 상단 정보 패널 */}
+      <View style={[styles.topInfoPanel, { top: insets.top + 10 }]}>
         <View style={styles.speedContainer}>
-          <View style={[styles.speedIndicator, { borderColor: getSpeedColor() }]}>
-            <Text style={[styles.currentSpeed, { color: getSpeedColor() }]}>
-              {currentSpeed}
-            </Text>
-            <Text style={[styles.speedUnit, { color: getSpeedColor() }]}>
-              km/h
-            </Text>
-          </View>
+          <Text style={styles.speedText}>{Math.round(currentSpeed)}</Text>
+          <Text style={styles.speedUnit}>km/h</Text>
           {speedLimit && (
             <View style={styles.speedLimitContainer}>
               <Text style={styles.speedLimitText}>{speedLimit}</Text>
             </View>
           )}
         </View>
+
+        <View style={styles.instructionContainer}>
+          <View style={styles.turnIconContainer}>
+            <Ionicons
+              name={getTurnIcon(nextTurnType)}
+              size={32}
+              color="#ffffff"
+            />
+          </View>
+          <View style={styles.instructionTextContainer}>
+            <Text style={styles.instructionDistance}>
+              {nextInstructionDistance || '계산 중...'}
+            </Text>
+            <Text style={styles.instructionText}>
+              {nextInstruction || '직진하세요'}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.roadInfoContainer}>
+          <Text style={styles.roadName}>{currentRoad || '도로 정보 확인 중...'}</Text>
+        </View>
       </View>
 
-      {/* 지도 영역 */}
-      <View style={styles.mapContainer}>
-        <WebView
-          ref={webViewRef}
-          source={{ html: generateNavigationHTML() }}
-          onMessage={handleWebViewMessage}
-          javaScriptEnabled={true}
-          domStorageEnabled={true}
-          originWhitelist={['*']}
-          
-          // iOS 전용 설정
-          {...(Platform.OS === 'ios' && {
-            useWebKit: true,
-            allowsInlineMediaPlayback: true,
-            bounces: false,
-            scrollEnabled: false,
-            automaticallyAdjustContentInsets: false,
-            contentInsetAdjustmentBehavior: 'never',
-            allowsBackForwardNavigationGestures: false,
-            dataDetectorTypes: 'none',
-            hideKeyboardAccessoryView: true,
-            keyboardDisplayRequiresUserAction: false,
-            injectedJavaScript: 'true;',
-          })}
-          
-          // 안드로이드 전용 설정
-          {...(Platform.OS === 'android' && {
-            mixedContentMode: 'compatibility',
-            androidLayerType: 'hardware',
-            androidHardwareAccelerationDisabled: false,
-            cacheEnabled: true,
-            thirdPartyCookiesEnabled: true,
-            allowFileAccess: true,
-            allowUniversalAccessFromFileURLs: true,
-            javaScriptCanOpenWindowsAutomatically: true,
-            mediaPlaybackRequiresUserAction: false,
-            overScrollMode: 'never',
-            nestedScrollEnabled: true,
-            domStorageEnabled: true,
-            startInLoadingState: true,
-            allowsFullscreenVideo: false,
-            userAgent: 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Mobile Safari/537.36'
-          })}
-          
-          // 공통 설정
-          startInLoadingState={true}
-          scalesPageToFit={false}
-          showsHorizontalScrollIndicator={false}
-          showsVerticalScrollIndicator={false}
-          
-          // 로딩 및 에러 처리 개선
-          renderLoading={() => <LoadingIndicator />}
-          onError={(error) => {
-            console.log('WebView 오류:', error);
-            if (error.nativeEvent.description && 
-                !error.nativeEvent.description.includes('Script error') &&
-                !error.nativeEvent.description.includes('net::')) {
-              setWebViewError(true);
-            }
-          }}
-          
-          onLoadEnd={() => {
-            console.log('WebView 로딩 완료');
-            const delay = Platform.OS === 'android' ? 1500 : 500;
-            setTimeout(() => {
-              if (!webViewError) {
-                console.log('WebView 로딩 상태를 활성화합니다');
-                setWebViewLoaded(true);
-              }
-            }, delay);
-          }}
-          
-          onLoadStart={() => {
-            console.log('WebView 로딩 시작');
-            setWebViewLoaded(false);
-            setWebViewError(false);
-          }}
-          
-          onHttpError={(syntheticEvent) => {
-            const { nativeEvent } = syntheticEvent;
-            console.log('HTTP 오류:', nativeEvent.statusCode, nativeEvent.url);
-            if (nativeEvent.url && nativeEvent.url.includes('kakao')) {
-              setWebViewError(true);
-            }
-          }}
-          
-          style={styles.webView}
-        />
-        
-        {/* 도로명 표시 */}
-        {currentRoad && (
-          <View style={styles.roadNameContainer}>
-            <Ionicons name="location-outline" size={16} color="#666" />
-            <Text style={styles.roadNameText}>{currentRoad}</Text>
-          </View>
-        )}
-        
-        {/* 수거 완료 버튼 */}
-        {waypoints.length > 0 && currentWaypointIndex < waypoints.length && showCompleteButton && (
-          <View style={styles.completeButtonContainer}>
-            <View style={styles.waypointDistanceInfo}>
-              <Text style={styles.waypointDistanceText}>
-                수거지 {currentWaypointIndex + 1}/{waypoints.length} - {remainingDistance || '거리 계산 중'}
-              </Text>
-            </View>
-            <TouchableOpacity 
-              style={styles.completeButton}
-              onPress={handleCollectionComplete}
-            >
-              <Ionicons name="checkmark" size={24} color="#fff" />
-              <Text style={styles.completeButtonText}>수거 완료</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-        
-        {/* 에러 표시 */}
-        {webViewError && (
-          <View style={styles.errorContainer}>
-            <Ionicons name="warning" size={32} color="#ff6b6b" />
-            <Text style={styles.errorText}>내비게이션 로딩 중 문제가 발생했습니다</Text>
-            <Text style={styles.errorSubText}>네트워크 연결을 확인하고 다시 시도해주세요</Text>
-            <TouchableOpacity 
-              style={styles.retryButton}
-              onPress={reloadWebView}
-            >
-              <Ionicons name="refresh" size={20} color="#fff" />
-              <Text style={styles.retryButtonText}>다시 시도</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
+      {/* WebView - 카카오맵 내비게이션 */}
+      <WebView
+        ref={webViewRef}
+        source={{ html: generateNavigationHTML() }}
+        onMessage={handleWebViewMessage}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        originWhitelist={['*']}
 
-      {/* 하단 정보 바 */}
-      <View style={styles.bottomInfoBar}>
-        <View style={styles.bottomLeft}>
-          <TouchableOpacity style={styles.recalculateButton} onPress={recalculateRoute}>
-            <Ionicons name="refresh" size={20} color="#666" />
-          </TouchableOpacity>
-          <View style={styles.timeDistanceContainer}>
-            <Text style={styles.arrivalTime}>
+        {...(Platform.OS === 'ios' && {
+          useWebKit: true,
+          allowsInlineMediaPlayback: true,
+          bounces: false,
+          scrollEnabled: false,
+          automaticallyAdjustContentInsets: false,
+          contentInsetAdjustmentBehavior: 'never',
+        })}
+
+        {...(Platform.OS === 'android' && {
+          mixedContentMode: 'compatibility',
+          androidLayerType: 'hardware',
+          androidHardwareAccelerationDisabled: false,
+          cacheEnabled: false,
+          thirdPartyCookiesEnabled: false,
+          allowFileAccess: true,
+          allowUniversalAccessFromFileURLs: true,
+          javaScriptCanOpenWindowsAutomatically: true,
+          mediaPlaybackRequiresUserAction: false,
+          overScrollMode: 'never',
+          nestedScrollEnabled: true,
+        })}
+
+        startInLoadingState={true}
+        scalesPageToFit={false}
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
+
+        renderLoading={() => (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#ffffff" />
+            <Text style={styles.loadingText}>내비게이션 로딩 중...</Text>
+          </View>
+        )}
+
+        onError={(error) => {
+          console.log('NavigationView WebView 오류:', error);
+          setWebViewError(true);
+          setWebViewLoaded(false);
+        }}
+
+        onLoadEnd={() => {
+          console.log('NavigationView WebView 로딩 완료');
+          const delay = Platform.OS === 'android' ? 1500 : 500;
+          setTimeout(() => {
+            if (!webViewError) {
+              console.log('NavigationView WebView 로딩 상태를 활성화합니다');
+              setWebViewLoaded(true);
+            }
+          }, delay);
+        }}
+
+        onLoadStart={() => {
+          console.log('NavigationView WebView 로딩 시작');
+          setWebViewLoaded(false);
+          setWebViewError(false);
+        }}
+
+        style={styles.webView}
+      />
+
+      {/* 하단 정보 패널 */}
+      <View style={[styles.bottomInfoPanel, { bottom: insets.bottom + 10 }]}>
+        <View style={styles.timeDistanceContainer}>
+          <View style={styles.timeContainer}>
+            <Ionicons name="time-outline" size={20} color="#ffffff" />
+            <Text style={styles.timeText}>
               {remainingTime || '계산 중...'}
             </Text>
-            <Text style={styles.remainingDistance}>
+          </View>
+
+          <View style={styles.distanceContainer}>
+            <Ionicons name="location-outline" size={20} color="#ffffff" />
+            <Text style={styles.distanceText}>
               {remainingDistance || '계산 중...'}
             </Text>
           </View>
         </View>
-        
-        <TouchableOpacity 
-          style={styles.menuButton}
-          onPress={() => {
-            Alert.alert(
-              '내비게이션 종료',
-              '내비게이션을 종료하시겠습니까?',
-              [
-                { text: '취소', style: 'cancel' },
-                { text: '종료', onPress: stopNavigation }
-              ]
-            );
-          }}
-        >
-          <Ionicons name="menu" size={24} color="#666" />
-        </TouchableOpacity>
+
+        <View style={styles.controlButtonsContainer}>
+          <TouchableOpacity
+            style={styles.controlButton}
+            onPress={recalculateRoute}
+          >
+            <Ionicons name="refresh-outline" size={24} color="#ffffff" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.controlButton}
+            onPress={() => {
+              showModal({
+                title: '내비게이션 종료',
+                message: '내비게이션을 종료하시겠습니까?',
+                type: 'default',
+                buttons: [
+                  { text: '취소', style: 'cancel' },
+                  { text: '종료', onPress: stopNavigation }
+                ]
+              });
+            }}
+          >
+            <Ionicons name="close-outline" size={24} color="#ffffff" />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      {/* 커스텀 모달 추가 */}
+      {/* 수거 완료 버튼 */}
+      {showCompleteButton && (
+        <TouchableOpacity
+          style={[styles.completeButton, { bottom: insets.bottom + 20 }]}
+          onPress={handleCollectionComplete}
+          activeOpacity={0.8}
+        >
+          <View style={styles.completeButtonContent}>
+            <Ionicons name="checkmark-circle" size={24} color="#ffffff" />
+            <Text style={styles.completeButtonText}>수거 완료</Text>
+          </View>
+        </TouchableOpacity>
+      )}
+
+      {/* 로딩 오버레이 */}
+      {!webViewLoaded && (
+        <View style={styles.loadingOverlay}>
+          <ActivityIndicator size="large" color="#ffffff" />
+          <Text style={styles.loadingOverlayText}>내비게이션 준비 중...</Text>
+        </View>
+      )}
+
+      {/* 에러 오버레이 */}
+      {webViewError && (
+        <View style={styles.errorOverlay}>
+          <Ionicons name="warning-outline" size={48} color="#ff6b6b" />
+          <Text style={styles.errorText}>내비게이션 로딩 중 오류가 발생했습니다</Text>
+          <TouchableOpacity
+            style={styles.retryButton}
+            onPress={() => {
+              setWebViewError(false);
+              setWebViewLoaded(false);
+              webViewRef.current?.reload();
+            }}
+          >
+            <Text style={styles.retryButtonText}>다시 시도</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {/* 커스텀 모달 */}
       <CustomModal
         visible={modalConfig.visible}
         title={modalConfig.title}
@@ -1706,8 +1758,9 @@ const NavigationView = () => {
         type={modalConfig.type}
         onClose={hideModal}
       />
-    </SafeAreaView>
+    </SafeArea>
   );
+  
 };
 
 const styles = StyleSheet.create({

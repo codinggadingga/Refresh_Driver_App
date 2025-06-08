@@ -3,6 +3,7 @@ import { View, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, Keyb
 import styles from './styles/loginStyles'; // 스타일 파일 import
 import { useNavigation } from '@react-navigation/native'; // 네비게이션 사용
 import AsyncStorage from '@react-native-async-storage/async-storage'; // AsyncStorage import
+import { SafeAreaView as SafeArea } from 'react-native-safe-area-context';
 
 const LoginScreen = () => {
   const navigation = useNavigation(); // 네비게이션 훅 사용
@@ -53,36 +54,38 @@ const LoginScreen = () => {
   };
 
   return (
-    <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
-      <View style={styles.loginContainer}>
-        <Text style={styles.loginLogo}>REFRESH</Text>
-        <Text style={styles.loginSubtitle}>DRIVER</Text>
-        <TextInput
-          placeholder="E-mail"
-          style={styles.loginInput}
-          placeholderTextColor="#FFFFFF"
-          value={email}
-          onChangeText={setEmail} // 이메일 입력값 업데이트
-        />
-        <TextInput
-          placeholder="비밀번호"
-          style={styles.loginInput}
-          secureTextEntry
-          placeholderTextColor="#FFFFFF"
-          value={password}
-          onChangeText={setPassword} // 비밀번호 입력값 업데이트
-        />
-        <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
-          <Text style={styles.loginButtonText}>로그인</Text>
-        </TouchableOpacity>
-        <View style={styles.loginFooter}>
-          <Text style={styles.loginLink}>비밀번호를 잊어버렸습니까?</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
-            <Text style={styles.loginLink}>계정 생성</Text>
+    <SafeArea style={{ flex: 1 }}>
+      <TouchableWithoutFeedback onPress={() => Keyboard.dismiss()}>
+        <View style={styles.loginContainer}>
+          <Text style={styles.loginLogo}>REFRESH</Text>
+          <Text style={styles.loginSubtitle}>DRIVER</Text>
+          <TextInput
+            placeholder="E-mail"
+            style={styles.loginInput}
+            placeholderTextColor="#FFFFFF"
+            value={email}
+            onChangeText={setEmail}
+          />
+          <TextInput
+            placeholder="비밀번호"
+            style={styles.loginInput}
+            secureTextEntry
+            placeholderTextColor="#FFFFFF"
+            value={password}
+            onChangeText={setPassword}
+          />
+          <TouchableOpacity style={styles.loginButton} onPress={handleLogin}>
+            <Text style={styles.loginButtonText}>로그인</Text>
           </TouchableOpacity>
+          <View style={styles.loginFooter}>
+            <Text style={styles.loginLink}>비밀번호를 잊어버렸습니까?</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Signup')}>
+              <Text style={styles.loginLink}>계정 생성</Text>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
-    </TouchableWithoutFeedback>
+      </TouchableWithoutFeedback>
+    </SafeArea>
   );
 };
 
