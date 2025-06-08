@@ -12,7 +12,6 @@ import {
 import { WebView } from 'react-native-webview';
 import * as Location from 'expo-location';
 import * as Linking from 'expo-linking';
-import { NaviApi } from '@react-native-kakao/navi';
 import { useNavigation } from '@react-navigation/native';
 
 const { width, height } = Dimensions.get('window');
@@ -20,7 +19,7 @@ const { width, height } = Dimensions.get('window');
 const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllSelections, handleMarkerClick }) => {
   const [mapLoaded, setMapLoaded] = useState(false);
   const [currentLocation, setCurrentLocation] = useState({
-    latitude: 37.566826,  // 기본값: 서울 시청
+    latitude: 37.566826,
     longitude: 126.9786567
   });
   const [locationError, setLocationError] = useState(null);
@@ -65,14 +64,12 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
   // 지도가 로드된 후 현재 위치와 수거지 마커 업데이트
   useEffect(() => {
     if (mapLoaded && webViewRef.current && !webViewError) {
-      // 현재 위치 업데이트
       webViewRef.current.postMessage(JSON.stringify({
         type: 'UPDATE_LOCATION',
         latitude: currentLocation.latitude,
         longitude: currentLocation.longitude
       }));
       
-      // 수거지 마커 추가
       if (pickupCoordinates && pickupCoordinates.length > 0) {
         const delay = Platform.OS === 'android' ? 300 : 100;
         setTimeout(() => {
@@ -102,46 +99,294 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
     }
   }, [mapLoaded, selectedPickups, webViewError]);
 
-  // 카카오 내비게이션 실행 함수
-  const startKakaoNavigation = async () => {
+  // 카카오내비 URL 스키마 실행 함수 (경유지 지원)
+  const startKakaoNaviApp = async () => {
     try {
       if (!selectedPickups || selectedPickups.length === 0) {
         Alert.alert('알림', '내비게이션을 시작하려면 최소 한 개의 수거지를 선택해주세요.');
         return;
       }
       
-      // 목적지는 마지막 수거지
-      const destination = {
-        name: selectedPickups[selectedPickups.length - 1].name || "목적지",
-        x: selectedPickups[selectedPickups.length - 1].longitude,
-        y: selectedPickups[selectedPickups.length - 1].latitude
-      };
-      
-      // 경유지는 중간 수거지들 (최대 3개)
-      const viaList = selectedPickups.slice(0, -1).slice(0, 3).map((point, index) => ({
-        name: point.name || `경유지 ${index+1}`,
-        x: point.longitude,
-        y: point.latitude
-      }));
-      
-      console.log('카카오 내비 실행 - 목적지:', destination);
-      console.log('카카오 내비 실행 - 경유지:', viaList);
-      
-      // 카카오 내비 실행 옵션
-      const options = {
-        routeInfo: true,
-        vehicleType: 1 // 1: 자동차, 2: 오토바이, 3: 자전거
-      };
-      
-      // SDK를 통한 내비게이션 실행
-      await NaviApi.navigate({
-        destination,
-        viaList,
-        options
-      });
+      // 경로 옵션 선택 다이얼로그
+      Alert.alert(
+        '경로 옵션 선택',
+        '어떤 경로로 안내받으시겠습니까?',
+        [
+          {
+            text: '추천 경로',
+            onPress: () => executeKakaoNaviUrlScheme('RECOMMEND')
+          },
+          {
+            text: '최단시간',
+            onPress: () => executeKakaoNaviUrlScheme('TIME')
+          },
+          {
+            text: '최단거리',
+            onPress: () => executeKakaoNaviUrlScheme('DISTANCE')
+          },
+          {
+            text: '취소',
+            style: 'cancel'
+          }
+        ]
+      );
     } catch (error) {
-      console.error('카카오 내비 실행 오류:', error);
-      Alert.alert('오류', '카카오 내비게이션을 실행할 수 없습니다: ' + error.message);
+      console.error('카카오내비 옵션 선택 오류:', error);
+      Alert.alert('오류', '카카오내비 옵션을 선택할 수 없습니다.');
+    }
+  };
+
+  // 카카오내비 URL 스키마 실행 (경유지 지원)
+  const executeKakaoNaviUrlScheme = async (routeOption) => {
+    try {
+      const destination = selectedPickups[selectedPickups.length - 1];
+      const waypoints = selectedPickups.slice(0, -1);
+      
+      const startLat = currentLocation.latitude;
+      const startLng = currentLocation.longitude;
+      
+      let naviUrl = `kakaonavi://navigate`;
+      naviUrl += `?sp=${startLat},${startLng}`;
+      naviUrl += `&ep=${destination.latitude},${destination.longitude}`;
+      naviUrl += `&ename=${encodeURIComponent(destination.name || '목적지')}`;
+      
+      if (waypoints.length > 0) {
+        const viaParams = waypoints.slice(0, 5).map((point, index) => {
+          const name = encodeURIComponent(point.name || `경유지${index + 1}`);
+          return `${point.latitude},${point.longitude},${name}`;
+        }).join('|');
+        naviUrl += `&via=${viaParams}`;
+      }
+      
+      switch(routeOption) {
+        case 'RECOMMEND':
+          naviUrl += '&rpoption=0';
+          break;
+        case 'TIME':
+          naviUrl += '&rpoption=1';
+          break;
+        case 'DISTANCE':
+          naviUrl += '&rpoption=2';
+          break;
+        default:
+          naviUrl += '&rpoption=0';
+      }
+      
+      naviUrl += '&coord_type=wgs84';
+      naviUrl += '&vehicle_type=1';
+      
+      console.log('카카오내비 URL 스키마:', naviUrl);
+      
+      const supported = await Linking.canOpenURL(naviUrl);
+      if (supported) {
+        await Linking.openURL(naviUrl);
+      } else {
+        const storeUrl = Platform.OS === 'ios' 
+          ? 'https://apps.apple.com/kr/app/kakaonavi/id417698849'
+          : 'https://play.google.com/store/apps/details?id=com.locnall.KimGiSa';
+        
+        Alert.alert(
+          '카카오내비 설치 필요',
+          '카카오내비가 설치되어 있지 않습니다. 설치하시겠습니까?',
+          [
+            { text: '취소', style: 'cancel' },
+            { text: '설치', onPress: () => Linking.openURL(storeUrl) }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('URL 스키마 실행 오류:', error);
+      Alert.alert('오류', '카카오내비를 실행할 수 없습니다: ' + error.message);
+    }
+  };
+
+  // 카카오내비 JavaScript SDK 실행 함수 (목적지만 지원 - 웹 길안내 종료에 따른 제한)
+  const startKakaoNaviJS = async () => {
+    try {
+      if (!selectedPickups || selectedPickups.length === 0) {
+        Alert.alert('알림', '내비게이션을 시작하려면 최소 한 개의 수거지를 선택해주세요.');
+        return;
+      }
+      
+      // 웹 길안내 서비스 종료 안내
+      Alert.alert(
+        '카카오내비 JavaScript SDK 안내',
+        '카카오내비 웹 길안내 서비스가 종료되어 JavaScript SDK는 앱 설치 페이지로만 이동합니다.\n\n경유지 안내가 필요하시면 URL 스키마 방식을 사용하시겠습니까?',
+        [
+          {
+            text: 'URL 스키마 사용 (경유지 지원)',
+            onPress: startKakaoNaviApp
+          },
+          {
+            text: '그래도 계속 (설치 페이지로 이동)',
+            onPress: () => executeKakaoNaviJS()
+          },
+          {
+            text: '취소',
+            style: 'cancel'
+          }
+        ]
+      );
+    } catch (error) {
+      console.error('카카오내비 JS SDK 옵션 선택 오류:', error);
+      Alert.alert('오류', '카카오내비 옵션을 선택할 수 없습니다.');
+    }
+  };
+
+  // 카카오내비 JavaScript SDK 실행 (웹 길안내 종료에 따라 설치 페이지로만 이동)
+  const executeKakaoNaviJS = async () => {
+    try {
+      const destination = selectedPickups[selectedPickups.length - 1];
+      
+      // WebView에서 Kakao.Navi.start() 실행 (공지사항에 따라 수정)
+      const kakaoNaviScript = `
+        (function() {
+          try {
+            // Kakao SDK 초기화 확인
+            if (typeof Kakao === 'undefined') {
+              console.error('Kakao SDK가 로드되지 않았습니다');
+              window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+                type: 'KAKAONAVI_ERROR',
+                message: 'Kakao SDK가 로드되지 않았습니다'
+              }));
+              return;
+            }
+            
+            if (!Kakao.isInitialized()) {
+              Kakao.init('30a7f8ffd1d5af779f063d9fa779b8b4');
+            }
+            
+            // 카카오내비 실행 파라미터 (공지사항에 따라 단순화)
+            const naviParams = {
+              name: '${destination.name || '목적지'}',
+              x: ${destination.longitude},
+              y: ${destination.latitude},
+              coordType: 'wgs84'
+            };
+            
+            console.log('카카오내비 실행 파라미터 (JS SDK):', naviParams);
+            
+            // 카카오내비 실행 (웹 길안내 종료로 인해 설치 페이지로 이동)
+            Kakao.Navi.start(naviParams);
+            
+            console.log('카카오내비 실행 성공 (설치 페이지로 이동)');
+            
+            window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'KAKAONAVI_SUCCESS',
+              message: '카카오내비 설치 페이지로 이동'
+            }));
+            
+          } catch (error) {
+            console.error('카카오내비 실행 오류:', error);
+            // React Native로 오류 전송
+            window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'KAKAONAVI_ERROR',
+              message: error.message
+            }));
+          }
+        })();
+        true;
+      `;
+      
+      // WebView에서 스크립트 실행
+      if (webViewRef.current && mapLoaded) {
+        webViewRef.current.injectJavaScript(kakaoNaviScript);
+      } else {
+        throw new Error('지도가 로드되지 않았습니다');
+      }
+      
+    } catch (error) {
+      console.error('카카오내비 JS SDK 실행 오류:', error);
+      // 대체 방안으로 URL 스키마 사용
+      await executeKakaoNaviUrlScheme('RECOMMEND');
+    }
+  };
+
+  // 카카오맵 실행 함수
+  const startKakaoMap = async (routeOption = null) => {
+    try {
+      if (!selectedPickups || selectedPickups.length === 0) {
+        Alert.alert('알림', '내비게이션을 시작하려면 최소 한 개의 수거지를 선택해주세요.');
+        return;
+      }
+      
+      // 경유지가 있는 경우 사용자에게 안내
+      if (selectedPickups.length > 1) {
+        Alert.alert(
+          '카카오맵 제한사항',
+          '카카오맵은 경유지를 지원하지 않습니다.\n마지막 수거지로만 안내됩니다.\n\n경유지 안내가 필요하시면 카카오내비를 사용해주세요.',
+          [
+            {
+              text: '카카오내비 사용',
+              onPress: startKakaoNaviApp
+            },
+            {
+              text: '그래도 계속',
+              onPress: () => proceedWithKakaoMap(routeOption || 'RECOMMEND')
+            },
+            {
+              text: '취소',
+              style: 'cancel'
+            }
+          ]
+        );
+        return;
+      }
+      
+      proceedWithKakaoMap(routeOption || 'RECOMMEND');
+    } catch (error) {
+      console.error('카카오맵 옵션 선택 오류:', error);
+      Alert.alert('오류', '카카오맵 옵션을 선택할 수 없습니다.');
+    }
+  };
+
+  // 카카오맵 실행 함수 (목적지만)
+  const proceedWithKakaoMap = async (routeOption) => {
+    try {
+      const startLat = currentLocation.latitude;
+      const startLng = currentLocation.longitude;
+      const destination = selectedPickups[selectedPickups.length - 1];
+      
+      let kakaoMapUrl = `kakaomap://route?sp=${startLat},${startLng}`;
+      kakaoMapUrl += `&ep=${destination.latitude},${destination.longitude}`;
+      kakaoMapUrl += `&by=CAR`;
+      
+      switch(routeOption) {
+        case 'RECOMMEND':
+          kakaoMapUrl += '&rpoption=RECOMMEND';
+          break;
+        case 'TIME':
+          kakaoMapUrl += '&rpoption=TIME';
+          break;
+        case 'DISTANCE':
+          kakaoMapUrl += '&rpoption=DISTANCE';
+          break;
+        default:
+          kakaoMapUrl += '&rpoption=RECOMMEND';
+      }
+      
+      console.log('카카오맵 URL (목적지만):', kakaoMapUrl);
+      
+      const supported = await Linking.canOpenURL(kakaoMapUrl);
+      if (supported) {
+        await Linking.openURL(kakaoMapUrl);
+      } else {
+        const storeUrl = Platform.OS === 'ios' 
+          ? 'https://apps.apple.com/kr/app/kakaomap/id304608425'
+          : 'https://play.google.com/store/apps/details?id=net.daum.android.map';
+        
+        Alert.alert(
+          '카카오맵 설치 필요',
+          '카카오맵이 설치되어 있지 않습니다. 설치하시겠습니까?',
+          [
+            { text: '취소', style: 'cancel' },
+            { text: '설치', onPress: () => Linking.openURL(storeUrl) }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('카카오맵 실행 오류:', error);
+      Alert.alert('오류', '카카오맵을 실행할 수 없습니다: ' + error.message);
     }
   };
 
@@ -167,7 +412,8 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
           waypoints: selectedPickups.slice(0, -1).map(point => ({
             latitude: point.latitude,
             longitude: point.longitude,
-            name: point.name
+            name: point.name,
+            id: point.id
           }))
         });
       } else {
@@ -179,29 +425,205 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
     }
   };
 
-  // 네비게이션 선택 다이얼로그 표시
-  const startNavigation = () => {
+  // 네이버지도 URL 스키마 실행 함수 (실제 앱 연결)
+// 네이버지도 URL 스키마 실행 함수 수정
+// 네이버지도 URL 스키마 실행 함수 수정 (appname 추가)
+const executeNaverMap = async () => {
+  try {
+    const startLat = currentLocation.latitude;
+    const startLng = currentLocation.longitude;
+    const destination = selectedPickups[selectedPickups.length - 1];
+    const destName = encodeURIComponent(destination.name || '목적지');
+    
+    // 앱 이름 설정 (expo 설정에 맞게)
+    const appName = Platform.OS === 'ios' 
+      ? 'driver' // iOS 번들 ID (expo.name 사용)
+      : 'driver'; // Android 패키지명 (expo.name 사용)
+    
+    // 네이버지도 URL 스키마 (appname 필수 추가)
+    let naverMapUrl = `nmap://route/car`;
+    naverMapUrl += `?slat=${startLat}&slng=${startLng}&sname=현재위치`;
+    naverMapUrl += `&dlat=${destination.latitude}&dlng=${destination.longitude}&dname=${destName}`;
+    
+    // 경유지 추가 (최대 5개)
+    const waypoints = selectedPickups.slice(0, -1);
+    if (waypoints.length > 0) {
+      waypoints.slice(0, 5).forEach((point, index) => {
+        const name = encodeURIComponent(point.name || `경유지${index + 1}`);
+        naverMapUrl += `&v${index + 1}lat=${point.latitude}&v${index + 1}lng=${point.longitude}&v${index + 1}name=${name}`;
+      });
+    }
+    
+    // 필수 appname 파라미터 추가
+    naverMapUrl += `&appname=${appName}`;
+    
+    console.log('네이버지도 URL (appname 포함):', naverMapUrl);
+    
+    // 실제 앱 실행 시도
+    const supported = await Linking.canOpenURL(naverMapUrl);
+    if (supported) {
+      await Linking.openURL(naverMapUrl);
+    } else {
+      // 대체 스키마들도 appname 포함하여 시도
+      await tryAlternativeNaverSchemes(appName);
+    }
+  } catch (error) {
+    console.error('네이버지도 실행 오류:', error);
+    await tryAlternativeNaverSchemes(appName);
+  }
+};
+
+// 대체 네이버지도 URL 스키마 시도 (appname 포함)
+const tryAlternativeNaverSchemes = async (appName) => {
+  try {
+    const destination = selectedPickups[selectedPickups.length - 1];
+    const destName = encodeURIComponent(destination.name || '목적지');
+    
+    // 대체 URL 스키마들 (모두 appname 포함)
+    const alternativeSchemes = [
+      // 네이버지도 기본 스키마
+      `navermap://route?dlat=${destination.latitude}&dlng=${destination.longitude}&dname=${destName}&appname=${appName}`,
+      
+      // 네이버지도 검색 스키마
+      `navermap://search?query=${destName}&appname=${appName}`,
+      
+      // 네이버지도 장소 스키마
+      `navermap://place?lat=${destination.latitude}&lng=${destination.longitude}&name=${destName}&appname=${appName}`,
+      
+      // 구 버전 스키마
+      `nmap://map?lat=${destination.latitude}&lng=${destination.longitude}&name=${destName}&appname=${appName}`
+    ];
+    
+    // 각 스키마를 순차적으로 시도
+    for (const scheme of alternativeSchemes) {
+      console.log('시도하는 URL (appname 포함):', scheme);
+      const supported = await Linking.canOpenURL(scheme);
+      if (supported) {
+        await Linking.openURL(scheme);
+        return; // 성공하면 종료
+      }
+    }
+    
+    // 모든 스키마 실패 시 스토어로 이동
+    throw new Error('모든 네이버지도 URL 스키마 실행 실패');
+    
+  } catch (error) {
+    console.error('대체 스키마 실행 오류:', error);
+    
+    // 정확한 패키지명으로 스토어 이동
+    const storeUrl = Platform.OS === 'ios' 
+      ? 'https://apps.apple.com/kr/app/naver-map-navigation/id311867728'
+      : 'https://play.google.com/store/apps/details?id=com.nhn.android.nmap';
+    
     Alert.alert(
-      '내비게이션 선택',
-      '사용할 내비게이션을 선택해주세요.',
+      '네이버지도 실행 실패',
+      '네이버지도를 실행할 수 없습니다.\n앱이 최신 버전인지 확인하거나 재설치해주세요.',
       [
-        {
-          text: '카카오 내비',
-          onPress: startKakaoNavigation
-        },
-        {
-          text: '앱 내비게이션',
-          onPress: startAppNavigation
-        },
-        {
-          text: '취소',
-          style: 'cancel'
-        }
+        { text: '취소', style: 'cancel' },
+        { text: '스토어로 이동', onPress: () => Linking.openURL(storeUrl) }
       ]
     );
-  };
+  }
+};
 
-  // 지도 HTML 생성 - 플랫폼별 최적화
+
+
+  // 티맵 URL 스키마 실행 함수 (실제 앱 연결)
+const executeTMap = async () => {
+  try {
+    const destination = selectedPickups[selectedPickups.length - 1];
+    const destName = encodeURIComponent(destination.name || '목적지');
+    
+    // 티맵 URL 스키마 (실제 앱 실행)
+    let tmapUrl = `tmap://route`;
+    tmapUrl += `?rGoName=${destName}`;
+    tmapUrl += `&rGoX=${destination.longitude}`;
+    tmapUrl += `&rGoY=${destination.latitude}`;
+    
+    console.log('티맵 URL:', tmapUrl);
+    
+    // 실제 앱 실행
+    const supported = await Linking.canOpenURL(tmapUrl);
+    if (supported) {
+      await Linking.openURL(tmapUrl);
+    } else {
+      // 앱이 설치되지 않은 경우 스토어로 이동
+      const storeUrl = Platform.OS === 'ios' 
+        ? 'https://apps.apple.com/kr/app/tmap/id431589174'
+        : 'https://play.google.com/store/apps/details?id=com.skt.tmap.ku';
+      
+      Alert.alert(
+        '티맵 설치 필요',
+        '티맵이 설치되어 있지 않습니다. 설치하시겠습니까?',
+        [
+          { text: '취소', style: 'cancel' },
+          { text: '설치', onPress: () => Linking.openURL(storeUrl) }
+        ]
+      );
+    }
+  } catch (error) {
+    console.error('티맵 실행 오류:', error);
+    Alert.alert('오류', '티맵을 실행할 수 없습니다: ' + error.message);
+  }
+};
+
+
+  // 네비게이션 선택 다이얼로그 표시 (공지사항에 따라 수정)
+// 최종 권장 방안
+const startNavigation = () => {
+  if (!selectedPickups || selectedPickups.length === 0) {
+    Alert.alert('알림', '내비게이션을 시작하려면 최소 한 개의 수거지를 선택해주세요.');
+    return;
+  }
+  
+  Alert.alert(
+    '내비게이션 선택',
+    `${selectedPickups.length}개의 수거지로 안내합니다.`,
+    [
+      {
+        text: '카카오내비 (추천)',
+        onPress: startKakaoNaviApp
+      },
+      {
+        text: '다른 앱 선택',
+        onPress: showOtherNavOptions
+      },
+      {
+        text: '취소',
+        style: 'cancel'
+      }
+    ]
+  );
+};
+
+const showOtherNavOptions = () => {
+  Alert.alert(
+    '다른 내비게이션 앱',
+    '사용할 앱을 선택해주세요.',
+    [
+      {
+        text: '네이버지도',
+        onPress: executeNaverMap
+      },
+     
+      {
+        text: '티맵',
+        onPress: executeTMap
+      },
+      {
+        text: '앱 내비게이션',
+        onPress: startAppNavigation
+      },
+      {
+        text: '뒤로',
+        onPress: startNavigation
+      }
+    ]
+  );
+};
+
+
+  // 지도 HTML 생성 (최신 JavaScript SDK 사용)
   const generateMapHTML = () => {
     const isAndroid = Platform.OS === 'android';
     
@@ -280,7 +702,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               z-index: 100;
               display: none;
             }
-            /* 향상된 경로 옵션 스타일 */
             .route-options {
               position: absolute;
               top: 15px;
@@ -299,7 +720,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               min-width: 300px;
               justify-content: center;
             }
-
             .option-label {
               font-size: 13px;
               font-weight: 600;
@@ -307,7 +727,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               margin-right: 12px;
               letter-spacing: -0.2px;
             }
-
             .option-buttons {
               display: flex;
               background: rgba(243, 244, 246, 0.8);
@@ -315,7 +734,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               padding: 3px;
               gap: 2px;
             }
-
             .option-button {
               border: none;
               background: transparent;
@@ -331,95 +749,37 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               min-width: 60px;
               text-align: center;
             }
-
             .option-button:hover {
               color: #374151;
               transform: translateY(-1px);
             }
-
             .option-button.active {
               background: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
               color: white;
               box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3), 0 2px 4px rgba(59, 130, 246, 0.2);
               transform: translateY(-1px);
             }
-
-            .option-button.active::before {
-              content: '';
-              position: absolute;
-              top: 0;
-              left: 0;
-              right: 0;
-              bottom: 0;
-              background: linear-gradient(45deg, rgba(255,255,255,0.1) 0%, transparent 50%, rgba(255,255,255,0.1) 100%);
-              pointer-events: none;
-            }
-
-            /* 아이콘 추가 */
-            .option-button::after {
-              content: '';
-              position: absolute;
-              left: 6px;
-              top: 50%;
-              transform: translateY(-50%);
-              width: 6px;
-              height: 6px;
-              border-radius: 50%;
-              background: currentColor;
-              opacity: 0;
-              transition: opacity 0.2s ease;
-            }
-
-            .option-button.active::after {
-              opacity: 1;
-            }
-
-            /* 추천 경로 특별 스타일 */
             #optRecommend.active {
               background: linear-gradient(135deg, #10B981 0%, #059669 100%);
               box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3), 0 2px 4px rgba(16, 185, 129, 0.2);
             }
-
-            /* 최단시간 경로 스타일 */
             #optTime.active {
               background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
               box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3), 0 2px 4px rgba(245, 158, 11, 0.2);
             }
-
-            /* 최단거리 경로 스타일 */
             #optDistance.active {
               background: linear-gradient(135deg, #EF4444 0%, #DC2626 100%);
               box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3), 0 2px 4px rgba(239, 68, 68, 0.2);
             }
-
-            /* 애니메이션 효과 */
-            @keyframes slideIn {
-              from {
-                opacity: 0;
-                transform: translateX(-50%) translateY(-10px);
-              }
-              to {
-                opacity: 1;
-                transform: translateX(-50%) translateY(0);
-              }
-            }
-
-            .route-options {
-              animation: slideIn 0.3s ease-out;
-            }
-
-            /* 반응형 디자인 */
             @media (max-width: 480px) {
               .route-options {
                 min-width: 280px;
                 padding: 10px 14px;
               }
-              
               .option-label {
                 font-size: 12px;
                 margin-right: 10px;
               }
-              
               .option-button {
                 padding: 7px 12px;
                 font-size: 11px;
@@ -440,6 +800,8 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               z-index: 1000;
             }
           </style>
+          <!-- 최신 카카오 JavaScript SDK 사용 (공지사항에 따라) -->
+          <script src="https://developers.kakao.com/sdk/js/kakao.js"></script>
           <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=30a7f8ffd1d5af779f063d9fa779b8b4&libraries=services&autoload=false"></script>
         </head>
         <body>
@@ -456,13 +818,11 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
           <div id="loadingIndicator" class="loading-indicator">경로 계산 중...</div>
           
           <script>
-            // 디버깅용 오류 핸들러
             window.onerror = function(message, source, lineno, colno, error) {
               window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
                 type: 'ERROR',
                 message: message
               }));
-              console.log('Error:', message);
               return true;
             };
             
@@ -472,11 +832,15 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
             var pickupOverlays = [];
             var polylines = [];
             
-            // 현재 경로 옵션 및 경로 위치 저장
             window.currentRouteOption = 'RECOMMEND';
             window.currentRouteLocations = [];
             
-            // 카카오맵 로드 - 안드로이드 호환성 개선
+            // Kakao SDK 초기화 (공지사항에 따라 최신 버전 사용)
+            if (typeof Kakao !== 'undefined' && !Kakao.isInitialized()) {
+              Kakao.init('30a7f8ffd1d5af779f063d9fa779b8b4');
+              console.log('Kakao SDK 초기화 완료 (최신 버전)');
+            }
+            
             ${isAndroid ? 'setTimeout(() => {' : ''}
             kakao.maps.load(function() {
               console.log('카카오맵 로드 완료');
@@ -484,7 +848,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
             });
             ${isAndroid ? '}, 100);' : ''}
             
-            // 지도 초기화
             function initMap() {
               try {
                 var mapContainer = document.getElementById('map');
@@ -499,9 +862,7 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                 };
                 
                 map = new kakao.maps.Map(mapContainer, mapOptions);
-                console.log('지도 초기화 완료');
                 
-                // 현재 위치 마커 추가
                 currentMarker = new kakao.maps.Marker({
                   position: new kakao.maps.LatLng(${currentLocation.latitude}, ${currentLocation.longitude}),
                   image: new kakao.maps.MarkerImage(
@@ -512,7 +873,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                 });
                 currentMarker.setMap(map);
                 
-                // 현재 위치 오버레이
                 var currentOverlay = new kakao.maps.CustomOverlay({
                   position: new kakao.maps.LatLng(${currentLocation.latitude}, ${currentLocation.longitude}),
                   content: '<div class="current-location-overlay">현재 위치</div>',
@@ -521,10 +881,8 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                 });
                 currentOverlay.setMap(map);
                 
-                // 경로 옵션 이벤트 설정
                 setupRouteOptions();
                 
-                // 안드로이드에서 지도 강제 리사이즈
                 ${isAndroid ? `
                 setTimeout(() => {
                   map.relayout();
@@ -547,7 +905,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               }
             }
             
-            // 경로 옵션 설정
             function setupRouteOptions() {
               document.getElementById('optRecommend').addEventListener('click', function() {
                 setRouteOption('RECOMMEND');
@@ -562,9 +919,7 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               });
             }
             
-            // 경로 옵션 변경
             function setRouteOption(option) {
-              // 활성 버튼 스타일 변경
               document.querySelectorAll('.option-button').forEach(btn => {
                 btn.classList.remove('active');
               });
@@ -584,37 +939,28 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               
               if (activeBtn) activeBtn.classList.add('active');
               
-              // 현재 경로 옵션 저장
               window.currentRouteOption = option;
               
-              // 현재 표시된 경로가 있으면 다시 계산
               if (window.currentRouteLocations && window.currentRouteLocations.length > 0) {
                 showRoute(window.currentRouteLocations);
               }
             }
             
-            // 수거지 마커 추가 - 안드로이드 호환성 개선
             function addPickupMarkers(locations) {
               try {
-                // 기존 마커 제거
                 clearPickupMarkers();
                 
                 if (!locations || locations.length === 0) return;
                 
                 var bounds = new kakao.maps.LatLngBounds();
-                
-                // 현재 위치 포함
                 bounds.extend(currentMarker.getPosition());
                 
-                // 안드로이드에서 마커 생성 지연
                 const delay = ${isAndroid ? '100' : '0'};
                 
                 setTimeout(() => {
                   locations.forEach(function(loc, index) {
-                    // 좌표 유효성 검사 추가
                     if (!loc.latitude || !loc.longitude || 
                         isNaN(loc.latitude) || isNaN(loc.longitude)) {
-                      console.log('유효하지 않은 좌표:', loc);
                       return;
                     }
                     
@@ -624,7 +970,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                     );
                     bounds.extend(position);
                     
-                    // 마커 생성 시 명시적 옵션 설정
                     var marker = new kakao.maps.Marker({
                       position: position,
                       map: map,
@@ -634,7 +979,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                     
                     pickupMarkers.push(marker);
                     
-                    // 마커 클릭 이벤트
                     kakao.maps.event.addListener(marker, 'click', function() {
                       window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
                         type: 'MARKER_CLICKED',
@@ -643,7 +987,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                       }));
                     });
                     
-                    // 오버레이 생성 시 안드로이드 호환성 개선
                     var overlayContent = '<div class="custom-overlay">수거지 ' + (index + 1) + '</div>';
                     
                     var overlay = new kakao.maps.CustomOverlay({
@@ -657,7 +1000,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                     pickupOverlays.push(overlay);
                   });
                   
-                  // 지도 범위 조정을 마커 생성 후로 지연
                   setTimeout(() => {
                     map.setBounds(bounds);
                   }, ${isAndroid ? '200' : '50'});
@@ -666,14 +1008,9 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                 
               } catch (error) {
                 console.log('수거지 마커 추가 오류:', error);
-                window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-                  type: 'ERROR',
-                  message: '수거지 마커 추가 오류: ' + error.message
-                }));
               }
             }
             
-            // 수거지 마커 제거
             function clearPickupMarkers() {
               pickupMarkers.forEach(function(marker) {
                 marker.setMap(null);
@@ -686,41 +1023,35 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               pickupOverlays = [];
             }
             
-            // 카카오 모빌리티 API를 이용한 경로 탐색
             async function fetchRouteWithKakaoMobility(origin, waypoints, destination) {
               try {
                 const REST_API_KEY = '90fc3c147a2997ec441fd2cd8e87e2a8';
                 
-                // 출발지 좌표 설정
                 const originObj = {
                   x: origin.getLng().toString(),
                   y: origin.getLat().toString()
                 };
                 
-                // 목적지 좌표 설정
                 const destinationObj = {
                   x: destination.getLng().toString(),
                   y: destination.getLat().toString()
                 };
                 
-                // 경유지 좌표 배열 생성
                 const waypointsArr = waypoints.map(point => ({
                   x: point.getLng().toString(),
                   y: point.getLat().toString()
                 }));
                 
-                // API 요청 데이터 구성
                 const requestData = {
                   origin: originObj,
                   destination: destinationObj,
                   waypoints: waypointsArr,
-                  priority: window.currentRouteOption, // 경로 우선순위
+                  priority: window.currentRouteOption,
                   car_fuel: 'GASOLINE',
                   alternatives: false,
                   road_details: true
                 };
                 
-                // API 호출
                 const response = await fetch('https://apis-navi.kakaomobility.com/v1/waypoints/directions', {
                   method: 'POST',
                   headers: {
@@ -738,24 +1069,16 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                 return data;
               } catch (error) {
                 console.error('카카오 모빌리티 API 호출 오류:', error);
-                window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-                  type: 'ERROR',
-                  message: '경로 탐색 오류: ' + error.message
-                }));
                 return null;
               }
             }
             
-            // 카카오 모빌리티 API를 이용한 경로 표시
             async function showRoute(locations) {
               try {
-                // 로딩 표시
                 document.getElementById('loadingIndicator').style.display = 'block';
                 
-                // 현재 경로 저장
                 window.currentRouteLocations = locations;
                 
-                // 기존 경로 제거
                 clearPolylines();
                 
                 if (!locations || locations.length === 0) {
@@ -764,54 +1087,41 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                   return;
                 }
                 
-                // 좌표 배열 생성
                 var points = [];
-                const origin = currentMarker.getPosition(); // 현재 위치
+                const origin = currentMarker.getPosition();
                 points.push(origin);
                 
-                // 경유지 좌표 배열
                 var waypoints = [];
                 
-                // 각 수거지 위치 추가
                 locations.forEach(function(loc, index) {
                   if (index < locations.length - 1) {
-                    // 마지막이 아닌 지점은 경유지로 처리
                     waypoints.push(new kakao.maps.LatLng(loc.latitude, loc.longitude));
                   } else {
-                    // 마지막 지점은 목적지로 처리
                     points.push(new kakao.maps.LatLng(loc.latitude, loc.longitude));
                   }
                 });
                 
-                // 모든 지점을 points에 추가 (시각화용)
                 waypoints.forEach(wp => points.push(wp));
                 
-                // 목적지 설정 (마지막 수거지 또는 현재 위치로 돌아오기)
                 const destination = locations.length > 0 
                   ? new kakao.maps.LatLng(locations[locations.length - 1].latitude, locations[locations.length - 1].longitude)
                   : origin;
                 
-                // 카카오 모빌리티 API 호출
                 const routeData = await fetchRouteWithKakaoMobility(origin, waypoints, destination);
                 
-                // 로딩 숨기기
                 document.getElementById('loadingIndicator').style.display = 'none';
                 
                 if (!routeData || !routeData.routes || routeData.routes.length === 0) {
                   throw new Error('경로 데이터를 받아오지 못했습니다.');
                 }
                 
-                // 첫 번째 경로 사용
                 const route = routeData.routes[0];
                 
-                // 총 거리 및 시간
-                const totalDistance = route.summary.distance;  // 미터 단위
-                const totalDuration = route.summary.duration;  // 초 단위
+                const totalDistance = route.summary.distance;
+                const totalDuration = route.summary.duration;
                 
-                // 경로 좌표 추출
                 const pathCoordinates = [];
                 
-                // 각 구간의 좌표 추출
                 route.sections.forEach(section => {
                   section.roads.forEach(road => {
                     road.vertexes.forEach((vertex, i) => {
@@ -824,7 +1134,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                   });
                 });
                 
-                // 경로 선 그리기
                 const polyline = new kakao.maps.Polyline({
                   path: pathCoordinates,
                   strokeWeight: 5,
@@ -836,12 +1145,10 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                 polyline.setMap(map);
                 polylines.push(polyline);
                 
-                // 경로 정보 표시
                 var routeInfoElement = document.getElementById('routeInfo');
                 routeInfoElement.textContent = \`총 거리: \${(totalDistance / 1000).toFixed(1)}km, 예상 시간: \${Math.round(totalDuration / 60)}분\`;
                 routeInfoElement.style.display = 'block';
                 
-                // 경로 정보 전송
                 window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
                   type: 'ROUTE_INFO',
                   distance: totalDistance,
@@ -850,7 +1157,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                   isEstimated: false
                 }));
                 
-                // 모든 지점이 보이도록 지도 범위 조정
                 var bounds = new kakao.maps.LatLngBounds();
                 points.forEach(function(point) {
                   bounds.extend(point);
@@ -859,20 +1165,12 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               } catch (error) {
                 console.log('경로 표시 오류:', error);
                 document.getElementById('loadingIndicator').style.display = 'none';
-                window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-                  type: 'ERROR',
-                  message: '경로 표시 오류: ' + error.message
-                }));
-                
-                // 오류 발생 시 기존 방식으로 직선 경로 표시 (대체 방안)
                 showSimpleRoute(locations);
               }
             }
             
-            // 단순 직선 경로 표시 (API 호출 실패 시 대체 방안)
             function showSimpleRoute(locations) {
               try {
-                // 기존 경로 제거
                 clearPolylines();
                 
                 if (!locations || locations.length === 0) {
@@ -880,35 +1178,27 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                   return;
                 }
                 
-                // 좌표 배열 생성
                 var points = [];
-                points.push(currentMarker.getPosition()); // 현재 위치
+                points.push(currentMarker.getPosition());
                 
-                // 각 수거지 위치 추가
                 locations.forEach(function(loc) {
                   points.push(new kakao.maps.LatLng(loc.latitude, loc.longitude));
                 });
                 
-                // 각 구간을 다른 색상으로 표시
                 var colors = ['#4B89DC', '#FF5E3A', '#FFCC00', '#5AD427', '#9B59B6'];
-                
-                // 총 거리 및 시간 계산용
                 var totalDistance = 0;
                 
-                // 각 구간별로 선 그리기
                 for (var i = 0; i < points.length - 1; i++) {
                   var color = colors[i % colors.length];
                   var start = points[i];
                   var end = points[i + 1];
                   
-                  // 직선 거리 계산
                   var distance = calculateDistance(
                     start.getLat(), start.getLng(),
                     end.getLat(), end.getLng()
                   );
                   totalDistance += distance;
                   
-                  // 선 그리기
                   var line = new kakao.maps.Polyline({
                     path: [start, end],
                     strokeWeight: 5,
@@ -921,24 +1211,20 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                   polylines.push(line);
                 }
                 
-                // 예상 시간 (km당 약 3분)
                 var estimatedMinutes = Math.round(totalDistance * 3);
                 
-                // 경로 정보 표시
                 var routeInfoElement = document.getElementById('routeInfo');
                 routeInfoElement.textContent = '총 거리: ' + totalDistance.toFixed(1) + 'km, 예상 시간: ' + estimatedMinutes + '분 (추정)';
                 routeInfoElement.style.display = 'block';
                 
-                // 경로 정보 전송
                 window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
                   type: 'ROUTE_INFO',
-                  distance: totalDistance * 1000, // m 단위로 변환
-                  duration: estimatedMinutes * 60, // 초 단위로 변환
+                  distance: totalDistance * 1000,
+                  duration: estimatedMinutes * 60,
                   viaCount: points.length - 2,
                   isEstimated: true
                 }));
                 
-                // 모든 지점이 보이도록 지도 범위 조정
                 var bounds = new kakao.maps.LatLngBounds();
                 points.forEach(function(point) {
                   bounds.extend(point);
@@ -946,16 +1232,11 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                 map.setBounds(bounds);
               } catch (error) {
                 console.log('단순 경로 표시 오류:', error);
-                window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-                  type: 'ERROR',
-                  message: '단순 경로 표시 오류: ' + error.message
-                }));
               }
             }
             
-            // 두 지점 간 거리 계산 (Haversine 공식)
             function calculateDistance(lat1, lon1, lat2, lon2) {
-              var R = 6371; // 지구 반경 (km)
+              var R = 6371;
               var dLat = deg2rad(lat2 - lat1);
               var dLon = deg2rad(lon2 - lon1);
               var a = 
@@ -963,16 +1244,14 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                 Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * 
                 Math.sin(dLon/2) * Math.sin(dLon/2); 
               var c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)); 
-              var distance = R * c; // 거리 (km)
+              var distance = R * c;
               return distance;
             }
             
-            // 각도를 라디안으로 변환
             function deg2rad(deg) {
               return deg * (Math.PI/180);
             }
             
-            // 경로 제거
             function clearPolylines() {
               polylines.forEach(function(polyline) {
                 polyline.setMap(null);
@@ -981,24 +1260,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               document.getElementById('routeInfo').style.display = 'none';
             }
             
-            // 마커 강제 리렌더링 (안드로이드용)
-            function forceRefreshMarkers() {
-              pickupMarkers.forEach(function(marker, index) {
-                marker.setMap(null);
-                setTimeout(() => {
-                  marker.setMap(map);
-                }, index * 50);
-              });
-              
-              pickupOverlays.forEach(function(overlay, index) {
-                overlay.setMap(null);
-                setTimeout(() => {
-                  overlay.setMap(map);
-                }, index * 50 + 25);
-              });
-            }
-            
-            // 메시지 수신 처리
             document.addEventListener('message', function(event) {
               handleMessage(event.data);
             });
@@ -1013,43 +1274,29 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
                 
                 switch(message.type) {
                   case 'UPDATE_LOCATION':
-                    // 현재 위치 업데이트
                     var newPosition = new kakao.maps.LatLng(message.latitude, message.longitude);
                     currentMarker.setPosition(newPosition);
                     break;
                     
                   case 'ADD_PICKUPS':
-                    // 수거지 마커 추가
                     addPickupMarkers(message.locations);
                     break;
                     
                   case 'SHOW_ROUTE':
-                    // 경로 표시
                     showRoute(message.locations);
                     break;
                     
                   case 'CLEAR_ROUTE':
-                    // 경로 제거
                     clearPolylines();
                     window.currentRouteLocations = [];
                     break;
                     
-                  case 'FORCE_REFRESH_MARKERS':
-                    // 안드로이드에서 마커 강제 리렌더링
-                    forceRefreshMarkers();
-                    break;
-                    
                   case 'FORCE_REFRESH':
-                    // 안드로이드에서 강제 새로고침
                     map.relayout();
                     break;
                 }
               } catch (error) {
                 console.log('메시지 처리 오류:', error);
-                window.ReactNativeWebView && window.ReactNativeWebView.postMessage(JSON.stringify({
-                  type: 'ERROR',
-                  message: '메시지 처리 오류: ' + error.message
-                }));
               }
             }
           </script>
@@ -1058,28 +1305,24 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
     `;
   };
   
-  // 웹뷰 메시지 핸들러 - 개선된 에러 처리
+  // 웹뷰 메시지 핸들러 수정
   const handleWebViewMessage = (event) => {
     try {
       const message = event.nativeEvent.data;
       
       if (message === 'MAP_LOADED') {
-        console.log('지도 로드 완료');
         setMapLoaded(true);
         setWebViewError(false);
       } else {
-        // JSON 메시지 처리
         try {
           const data = JSON.parse(message);
           switch (data.type) {
             case 'MAP_READY':
-              console.log('지도 준비 완료');
               setMapLoaded(true);
               setWebViewError(false);
               break;
               
             case 'MARKER_CLICKED':
-              console.log('마커 클릭:', data.id, data.index);
               if (handleMarkerClick && pickupCoordinates) {
                 const clickedPickup = pickupCoordinates.find(p => p.id === data.id);
                 if (clickedPickup) {
@@ -1089,7 +1332,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               break;
               
             case 'ROUTE_INFO':
-              console.log('경로 정보:', data);
               setRouteInfo({
                 distance: data.distance,
                 duration: data.duration,
@@ -1098,9 +1340,20 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               });
               break;
               
-            case 'OPTIMAL_ROUTE':
-              console.log('최적 경로:', data);
-              setOptimizedRoute(data.route);
+            case 'KAKAONAVI_SUCCESS':
+              console.log('카카오내비 실행 성공:', data.message);
+              break;
+              
+            case 'KAKAONAVI_ERROR':
+              console.error('카카오내비 오류:', data.message);
+              Alert.alert(
+                '카카오내비 오류',
+                '카카오내비 실행에 실패했습니다. URL 스키마로 재시도하시겠습니까?',
+                [
+                  { text: '취소', style: 'cancel' },
+                  { text: '재시도', onPress: () => executeKakaoNaviUrlScheme('RECOMMEND') }
+                ]
+              );
               break;
               
             case 'ERROR':
@@ -1109,17 +1362,14 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               break;
           }
         } catch (jsonError) {
-          // 단순 문자열 메시지
-          console.log('웹뷰 메시지(문자열):', message);
+          console.log('웹뷰 메시지:', message);
         }
       }
     } catch (error) {
       console.error('메시지 처리 오류:', error);
-      setWebViewError(true);
     }
   };
 
-  // 헤더 컴포넌트
   const Header = () => (
     <View style={styles.header}>
       <TouchableOpacity 
@@ -1143,7 +1393,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
     </View>
   );
 
-  // 로딩 컴포넌트
   const LoadingIndicator = () => (
     <View style={styles.loadingContainer}>
       <ActivityIndicator size="large" color="#5c8d62" />
@@ -1151,7 +1400,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
     </View>
   );
 
-  // 경로 정보 컴포넌트
   const RouteInfoPanel = () => (
     <View style={styles.routeInfoContainer}>
       <Text style={styles.routeInfoText}>
@@ -1196,7 +1444,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
             domStorageEnabled={true}
             originWhitelist={['*']}
             
-            // iOS 전용 설정
             {...(Platform.OS === 'ios' && {
               useWebKit: true,
               allowsInlineMediaPlayback: true,
@@ -1206,7 +1453,6 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               contentInsetAdjustmentBehavior: 'never',
             })}
             
-            // 안드로이드 전용 설정
             {...(Platform.OS === 'android' && {
               mixedContentMode: 'compatibility',
               androidLayerType: 'hardware',
@@ -1221,29 +1467,18 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               nestedScrollEnabled: true,
             })}
             
-            // 공통 설정
             startInLoadingState={true}
             scalesPageToFit={false}
             showsHorizontalScrollIndicator={false}
             showsVerticalScrollIndicator={false}
             
-            // 로딩 및 에러 처리
             renderLoading={() => <LoadingIndicator />}
             onError={(error) => {
               console.log('WebView 오류:', error);
               setWebViewError(true);
-              // 에러 발생 시 재로딩 시도
-              if (webViewRef.current) {
-                setTimeout(() => {
-                  webViewRef.current.reload();
-                }, 1000);
-              }
             }}
             
-            // 로딩 완료 처리
             onLoadEnd={() => {
-              console.log('WebView 로딩 완료');
-              // 안드로이드에서는 추가 지연 후 초기화
               const delay = Platform.OS === 'android' ? 500 : 100;
               setTimeout(() => {
                 if (!webViewError) {
@@ -1252,16 +1487,9 @@ const MapView = ({ toggleViewMode, pickupCoordinates, selectedPickups, clearAllS
               }, delay);
             }}
             
-            // 로딩 시작 처리
             onLoadStart={() => {
-              console.log('WebView 로딩 시작');
               setMapLoaded(false);
               setWebViewError(false);
-            }}
-            
-            // 네비게이션 상태 변경 처리
-            onNavigationStateChange={(navState) => {
-              console.log('Navigation state:', navState);
             }}
             
             style={styles.mapView}
